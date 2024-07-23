@@ -1,0 +1,2 @@
+weatherapi
+bd08b8a22ac64d16ab8140958242207
