@@ -1,0 +1,113 @@
+rivate void updateConfluenceTable(File excelFile) throws Exception {
+        List<List<String>> data = readExcelFile(excelFile);
+        String tableContent = convertToConfluenceTable(data);
+        
+        HttpClient httpClient = HttpClients.createDefault();
+        
+        // Get current page version using v1 API (more reliable for version info)
+        String getUrl = String.format("%s/wiki/rest/api/content/%s?expand=version", confluenceUrl, pageId);
+        HttpGet httpGet = new HttpGet(getUrl);
+        
+        // Set Bearer token authentication
+        httpGet.setHeader("Authorization", "Bearer " + apiToken);
+        httpGet.setHeader("Accept", "application/json");
+        
+        System.out.println("Fetching page version from: " + getUrl);
+        
+        HttpResponse response = httpClient.execute(httpGet);
+        int statusCode = response.getStatusLine().getStatusCode();
+        String responseBody = EntityUtils.toString(response.getEntity());
+        
+        System.out.println("Version fetch status code: " + statusCode);
+        System.out.println("Response body: " + responseBody);
+        
+        if (statusCode != 200) {
+            throw new RuntimeException("Failed to fetch page version. Status code: " + statusCode + 
+                ", Response: " + responseBody);
+        }
+        
+        if (responseBody.trim().isEmpty()) {
+            throw new RuntimeException("Empty response received from Confluence API");
+        }
+        
+        JSONObject pageInfo = new JSONObject(responseBody);
+        int currentVersion = pageInfo.getJSONObject("version").getInt("number");
+        String pageTitle = pageInfo.getString("title");
+        
+        System.out.println("Current page version: " + currentVersion);
+        System.out.println("Current page title: " + pageTitle);
+        
+        // Update page using v1 API
+        String updateUrl = String.format("%s/wiki/rest/api/content/%s", confluenceUrl, pageId);
+        HttpPut httpPut = new HttpPut(updateUrl);
+        
+        // Set Bearer token authentication for update request
+        httpPut.setHeader("Authorization", "Bearer " + apiToken);
+        httpPut.setHeader("Content-Type", "application/json");
+        
+        JSONObject payload = new JSONObject()
+            .put("version", new JSONObject().put("number", currentVersion + 1))
+            .put("type", "page")
+            .put("title", pageTitle)
+            .put("space", new JSONObject().put("key", spaceKey))
+            .put("body", new JSONObject()
+                .put("storage", new JSONObject()
+                    .put("value", tableContent)
+                    .put("representation", "storage")));
+        
+        System.out.println("Updating page with payload: " + payload.toString(2));
+        
+        StringEntity entity = new StringEntity(payload.toString(), StandardCharsets.UTF_8);
+        httpPut.setEntity(entity);
+        
+        response = httpClient.execute(httpPut);
+        statusCode = response.getStatusLine().getStatusCode();
+        responseBody = EntityUtils.toString(response.getEntity());
+        
+        System.out.println("Update status code: " + statusCode);
+        System.out.println("Update response: " + responseBody);
+        
+        if (statusCode >= 200 && statusCode < 300) {
+            System.out.println("Table updated successfully");
+        } else {
+            throw new RuntimeException("Failed to update page content. Status code: " + 
+                statusCode + ", Response: " + responseBody);
+        }
+    }
+
+    public void startScheduledUpdate() {
+        Timer timer = new Timer();
+        
+        System.out.println("Starting scheduled Excel to Table conversion service");
+        System.out.println("Update interval: " + INTERVAL_MINUTES + " minutes");
+        System.out.println("Watching file: " + excelFilePath);
+        
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    LocalDateTime now = LocalDateTime.now();
+                    System.out.println("\nStarting update at: " + now.format(formatter));
+                    
+                    File excelFile = new File(excelFilePath);
+                    if (!excelFile.exists()) {
+                        System.out.println("Error: Excel file not found at " + excelFilePath);
+                        return;
+                    }
+                    
+                    updateConfluenceTable(excelFile);
+                    System.out.println("Update completed successfully at: " + 
+                        LocalDateTime.now().format(formatter));
+                    
+                } catch (Exception e) {
+                    System.err.println("Error during scheduled update: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        }, 0, INTERVAL_MINUTES * 60 * 1000);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down timer...");
+            timer.cancel();
+        }));
+    }
