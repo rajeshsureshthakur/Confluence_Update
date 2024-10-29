@@ -1,0 +1,288 @@
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
+import org.json.JSONObject;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+public class ConfluenceCSVToTable {
+    private final String confluenceUrl;
+    private final String apiToken;
+    private final String spaceKey;
+    private final String pageId;
+    private final String csvFolderPath;
+    private static final int INTERVAL_MINUTES = 5;
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    public ConfluenceCSVToTable(String confluenceUrl, String apiToken, 
+                              String spaceKey, String pageId, String csvFolderPath) {
+        this.confluenceUrl = confluenceUrl;
+        this.apiToken = apiToken;
+        this.spaceKey = spaceKey;
+        this.pageId = pageId;
+        this.csvFolderPath = csvFolderPath;
+        
+        System.out.println("Configuration:");
+        System.out.println("Confluence URL: " + confluenceUrl);
+        System.out.println("Page ID: " + pageId);
+        System.out.println("CSV Folder: " + csvFolderPath);
+    }
+
+    private List<File> getCSVFiles() {
+        File folder = new File(csvFolderPath);
+        File[] files = folder.listFiles((dir, name) -> 
+            name.toLowerCase().endsWith(".csv"));
+        
+        if (files == null || files.length == 0) {
+            return new ArrayList<>();
+        }
+        
+        List<File> csvFiles = Arrays.asList(files);
+        Collections.sort(csvFiles, Comparator.comparing(File::getName));
+        return csvFiles;
+    }
+
+    private List<List<String>> readCSVFile(File csvFile) throws IOException {
+        List<List<String>> data = new ArrayList<>();
+        
+        try (BufferedReader br = new BufferedReader(new FileReader(csvFile))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                // Skip empty lines
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+                
+                List<String> row = parseCSVLine(line);
+                // Only add rows that have at least one non-empty cell
+                if (row.stream().anyMatch(cell -> !cell.trim().isEmpty())) {
+                    data.add(row);
+                }
+            }
+        }
+        
+        return data;
+    }
+
+    private List<String> parseCSVLine(String line) {
+        List<String> row = new ArrayList<>();
+        StringBuilder field = new StringBuilder();
+        boolean inQuotes = false;
+        
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            
+            if (c == '"') {
+                // Check if this is an escaped quote
+                if (i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    field.append('"');
+                    i++; // Skip the next quote
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (c == ',' && !inQuotes) {
+                row.add(field.toString().trim());
+                field.setLength(0); // Clear the StringBuilder
+            } else {
+                field.append(c);
+            }
+        }
+        
+        // Add the last field
+        row.add(field.toString().trim());
+        
+        return row;
+    }
+
+    private String convertToConfluencePage(Map<String, List<List<String>>> allFileData) {
+        StringBuilder pageBuilder = new StringBuilder();
+        
+        // Add last update time
+        pageBuilder.append("<p><em>Last updated: ")
+                  .append(LocalDateTime.now().format(formatter))
+                  .append("</em></p>\n\n");
+        
+        // Add table of contents
+        pageBuilder.append("<ac:structured-macro ac:name=\"toc\">\n")
+                  .append("<ac:parameter ac:name=\"maxLevel\">1</ac:parameter>\n")
+                  .append("</ac:structured-macro>\n\n");
+        
+        // Process each file
+        for (Map.Entry<String, List<List<String>>> entry : allFileData.entrySet()) {
+            String fileName = entry.getKey();
+            List<List<String>> fileData = entry.getValue();
+            
+            if (fileData.isEmpty()) {
+                continue;
+            }
+            
+            // Add file name as heading
+            pageBuilder.append("<h1>").append(escapeHtml(fileName)).append("</h1>\n");
+            
+            // Add table
+            pageBuilder.append("<ac:structured-macro ac:name=\"table-excerpt\">\n");
+            pageBuilder.append("<ac:parameter ac:name=\"atlas-macro-id\">")
+                      .append(fileName.replaceAll("[^a-zA-Z0-9]", "-").toLowerCase())
+                      .append("</ac:parameter>\n");
+            pageBuilder.append("<ac:rich-text-body>\n");
+            pageBuilder.append("<table class=\"wrapped\">\n");
+            pageBuilder.append("<colgroup>");
+            
+            // Add column definitions
+            for (int i = 0; i < fileData.get(0).size(); i++) {
+                pageBuilder.append("<col/>");
+            }
+            pageBuilder.append("</colgroup>\n");
+            
+            // Add header row
+            pageBuilder.append("<thead>\n<tr>\n");
+            for (String header : fileData.get(0)) {
+                pageBuilder.append("<th>").append(escapeHtml(header)).append("</th>\n");
+            }
+            pageBuilder.append("</tr>\n</thead>\n");
+            
+            // Add data rows
+            pageBuilder.append("<tbody>\n");
+            for (int i = 1; i < fileData.size(); i++) {
+                pageBuilder.append("<tr>\n");
+                for (String cell : fileData.get(i)) {
+                    pageBuilder.append("<td>").append(escapeHtml(cell)).append("</td>\n");
+                }
+                pageBuilder.append("</tr>\n");
+            }
+            pageBuilder.append("</tbody>\n");
+            pageBuilder.append("</table>\n");
+            pageBuilder.append("</ac:rich-text-body>\n");
+            pageBuilder.append("</ac:structured-macro>\n\n");
+        }
+        
+        return pageBuilder.toString();
+    }
+
+    private void updateConfluencePage() throws Exception {
+        // Get all CSV files
+        List<File> csvFiles = getCSVFiles();
+        if (csvFiles.isEmpty()) {
+            System.out.println("No CSV files found in " + csvFolderPath);
+            return;
+        }
+        
+        // Read all files
+        Map<String, List<List<String>>> allFileData = new LinkedHashMap<>();
+        for (File file : csvFiles) {
+            System.out.println("Processing file: " + file.getName());
+            List<List<String>> fileData = readCSVFile(file);
+            if (!fileData.isEmpty()) {
+                allFileData.put(file.getName(), fileData);
+            }
+        }
+        
+        // Convert all data to Confluence format
+        String pageContent = convertToConfluencePage(allFileData);
+        
+        // Update the page
+        HttpClient httpClient = HttpClients.createDefault();
+        
+        // Get current page version
+        String getUrl = String.format("%s/wiki/rest/api/content/%s?expand=version", confluenceUrl, pageId);
+        HttpGet httpGet = new HttpGet(getUrl);
+        
+        httpGet.setHeader("Authorization", "Bearer " + apiToken);
+        
+        HttpResponse response = httpClient.execute(httpGet);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        
+        JSONObject pageInfo = new JSONObject(responseBody);
+        int currentVersion = pageInfo.getJSONObject("version").getInt("number");
+        String pageTitle = pageInfo.getString("title");
+        
+        // Update page content
+        String updateUrl = String.format("%s/wiki/rest/api/content/%s", confluenceUrl, pageId);
+        HttpPut httpPut = new HttpPut(updateUrl);
+        
+        httpPut.setHeader("Authorization", "Bearer " + apiToken);
+        httpPut.setHeader("Content-Type", "application/json");
+        
+        JSONObject payload = new JSONObject()
+            .put("version", new JSONObject().put("number", currentVersion + 1))
+            .put("type", "page")
+            .put("title", pageTitle)
+            .put("body", new JSONObject()
+                .put("storage", new JSONObject()
+                    .put("value", pageContent)
+                    .put("representation", "storage")));
+        
+        StringEntity entity = new StringEntity(payload.toString(), StandardCharsets.UTF_8);
+        httpPut.setEntity(entity);
+        
+        response = httpClient.execute(httpPut);
+        int statusCode = response.getStatusLine().getStatusCode();
+        
+        if (statusCode >= 200 && statusCode < 300) {
+            System.out.println("All files updated successfully");
+        } else {
+            throw new RuntimeException("Failed to update page content. Status code: " + statusCode);
+        }
+    }
+
+    private String escapeHtml(String input) {
+        return input.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&apos;");
+    }
+
+    public void startScheduledUpdate() {
+        Timer timer = new Timer();
+        
+        System.out.println("Starting scheduled CSV to Table conversion service");
+        System.out.println("Update interval: " + INTERVAL_MINUTES + " minutes");
+        System.out.println("Watching folder: " + csvFolderPath);
+        
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    LocalDateTime now = LocalDateTime.now();
+                    System.out.println("\nStarting update at: " + now.format(formatter));
+                    
+                    updateConfluencePage();
+                    System.out.println("Update completed successfully at: " + 
+                        LocalDateTime.now().format(formatter));
+                    
+                } catch (Exception e) {
+                    System.err.println("Error during scheduled update: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        }, 0, INTERVAL_MINUTES * 60 * 1000);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down timer...");
+            timer.cancel();
+        }));
+    }
+
+    public static void main(String[] args) {
+        // Configure your settings here
+        String confluenceUrl = "https://your-domain.atlassian.net";  // Your Confluence Cloud URL
+        String apiToken = "your-api-token";                          // Your API token
+        String spaceKey = "SPACE";                                   // Your space key
+        String pageId = "123456";                                    // Your page ID
+        String csvFolderPath = "path/to/your/csv/files";            // Path to folder containing CSV files
+
+        ConfluenceCSVToTable converter = new ConfluenceCSVToTable(
+            confluenceUrl, apiToken, spaceKey, pageId, csvFolderPath);
+            
+        converter.startScheduledUpdate();
+    }
+}
