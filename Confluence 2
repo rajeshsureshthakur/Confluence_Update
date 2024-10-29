@@ -1,0 +1,145 @@
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ConfluenceExcelToTable {
+    private final String confluenceUrl;
+    private final String username;
+    private final String apiToken;
+    private final String spaceKey;
+    private final String pageId;
+    private final String excelFilePath;
+    private static final int INTERVAL_MINUTES = 5;
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    public ConfluenceExcelToTable(String confluenceUrl, String username, String apiToken, 
+                                String spaceKey, String pageId, String excelFilePath) {
+        this.confluenceUrl = confluenceUrl;
+        this.username = username;
+        this.apiToken = apiToken;
+        this.spaceKey = spaceKey;
+        this.pageId = pageId;
+        this.excelFilePath = excelFilePath;
+        
+        // Log configuration (excluding sensitive data)
+        System.out.println("Configuration:");
+        System.out.println("Confluence URL: " + confluenceUrl);
+        System.out.println("Space Key: " + spaceKey);
+        System.out.println("Page ID: " + pageId);
+        System.out.println("Excel File: " + excelFilePath);
+    }
+
+    // ... (previous methods remain the same until updateConfluenceTable)
+
+    private void updateConfluenceTable(File excelFile) throws Exception {
+        List<List<String>> data = readExcelFile(excelFile);
+        String tableContent = convertToConfluenceTable(data);
+        
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            // Get current page version
+            String getUrl = String.format("%s/rest/api/content/%s?expand=version", confluenceUrl, pageId);
+            HttpGet httpGet = new HttpGet(getUrl);
+            
+            String auth = username + ":" + apiToken;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
+            httpGet.setHeader("Authorization", "Basic " + encodedAuth);
+            
+            System.out.println("Fetching page version from: " + getUrl);
+            
+            HttpResponse response = httpClient.execute(httpGet);
+            int statusCode = response.getStatusLine().getStatusCode();
+            String responseBody = EntityUtils.toString(response.getEntity());
+            
+            System.out.println("Version fetch status code: " + statusCode);
+            System.out.println("Response body: " + responseBody);
+            
+            if (statusCode != 200) {
+                throw new RuntimeException("Failed to fetch page version. Status code: " + statusCode + 
+                    ", Response: " + responseBody);
+            }
+            
+            if (responseBody.trim().isEmpty()) {
+                throw new RuntimeException("Empty response received from Confluence API");
+            }
+            
+            JSONObject pageInfo = new JSONObject(responseBody);
+            int currentVersion = pageInfo.getJSONObject("version").getInt("number");
+            
+            System.out.println("Current page version: " + currentVersion);
+            
+            // Update page
+            String updateUrl = String.format("%s/rest/api/content/%s", confluenceUrl, pageId);
+            HttpPut httpPut = new HttpPut(updateUrl);
+            
+            httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+            httpPut.setHeader("Content-Type", "application/json");
+            
+            LocalDateTime now = LocalDateTime.now();
+            String title = "Excel Data Table - Updated " + now.format(formatter);
+            
+            JSONObject payload = new JSONObject()
+                .put("version", new JSONObject().put("number", currentVersion + 1))
+                .put("type", "page")
+                .put("title", title)
+                .put("space", new JSONObject().put("key", spaceKey))
+                .put("body", new JSONObject()
+                    .put("storage", new JSONObject()
+                        .put("value", tableContent)
+                        .put("representation", "storage")));
+            
+            System.out.println("Updating page with payload: " + payload.toString(2));
+            
+            StringEntity entity = new StringEntity(payload.toString(), StandardCharsets.UTF_8);
+            httpPut.setEntity(entity);
+            
+            response = httpClient.execute(httpPut);
+            statusCode = response.getStatusLine().getStatusCode();
+            responseBody = EntityUtils.toString(response.getEntity());
+            
+            System.out.println("Update status code: " + statusCode);
+            System.out.println("Update response: " + responseBody);
+            
+            if (statusCode >= 200 && statusCode < 300) {
+                System.out.println("Table updated successfully");
+            } else {
+                throw new RuntimeException("Failed to update page content. Status code: " + 
+                    statusCode + ", Response: " + responseBody);
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        // Example configuration - replace with your values
+        String confluenceUrl = "https://your-domain.atlassian.net";  // Remove /wiki from the end
+        String username = "your-email@domain.com";
+        String apiToken = "your-api-token";
+        String spaceKey = "SPACE";
+        String pageId = "123456";
+        String excelFilePath = "path/to/your/excel/file.xlsx";
+
+        ConfluenceExcelToTable converter = new ConfluenceExcelToTable(
+            confluenceUrl, username, apiToken, spaceKey, pageId, excelFilePath);
+            
+        converter.startScheduledUpdate();
+    }
+}
