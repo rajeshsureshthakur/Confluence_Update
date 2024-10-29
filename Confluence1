@@ -1,0 +1,249 @@
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPut;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ConfluenceExcelToTable {
+    private final String confluenceUrl;
+    private final String username;
+    private final String apiToken;
+    private final String spaceKey;
+    private final String pageId;
+    private final String excelFilePath;
+    private static final int INTERVAL_MINUTES = 5;
+    private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    public ConfluenceExcelToTable(String confluenceUrl, String username, String apiToken, 
+                                String spaceKey, String pageId, String excelFilePath) {
+        this.confluenceUrl = confluenceUrl;
+        this.username = username;
+        this.apiToken = apiToken;
+        this.spaceKey = spaceKey;
+        this.pageId = pageId;
+        this.excelFilePath = excelFilePath;
+    }
+
+    public void startScheduledUpdate() {
+        Timer timer = new Timer();
+        
+        System.out.println("Starting scheduled Excel to Table conversion service");
+        System.out.println("Update interval: " + INTERVAL_MINUTES + " minutes");
+        System.out.println("Watching file: " + excelFilePath);
+        
+        // Schedule the task
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    LocalDateTime now = LocalDateTime.now();
+                    System.out.println("\nStarting update at: " + now.format(formatter));
+                    
+                    File excelFile = new File(excelFilePath);
+                    if (!excelFile.exists()) {
+                        System.out.println("Error: Excel file not found at " + excelFilePath);
+                        return;
+                    }
+                    
+                    updateConfluenceTable(excelFile);
+                    System.out.println("Update completed successfully at: " + 
+                        LocalDateTime.now().format(formatter));
+                    
+                } catch (Exception e) {
+                    System.err.println("Error during scheduled update: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        }, 0, INTERVAL_MINUTES * 60 * 1000); // Convert minutes to milliseconds
+
+        // Add shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down timer...");
+            timer.cancel();
+        }));
+    }
+
+    private List<List<String>> readExcelFile(File excelFile) throws Exception {
+        List<List<String>> data = new ArrayList<>();
+        
+        try (FileInputStream fis = new FileInputStream(excelFile)) {
+            Workbook workbook;
+            
+            if (excelFile.getName().toLowerCase().endsWith("xlsx")) {
+                workbook = new XSSFWorkbook(fis);
+            } else {
+                workbook = new HSSFWorkbook(fis);
+            }
+            
+            Sheet sheet = workbook.getSheetAt(0); // Get first sheet
+            
+            for (Row row : sheet) {
+                List<String> rowData = new ArrayList<>();
+                for (Cell cell : row) {
+                    switch (cell.getCellType()) {
+                        case STRING:
+                            rowData.add(cell.getStringCellValue());
+                            break;
+                        case NUMERIC:
+                            if (DateUtil.isCellDateFormatted(cell)) {
+                                rowData.add(cell.getLocalDateTimeCellValue().format(formatter));
+                            } else {
+                                rowData.add(String.valueOf(cell.getNumericCellValue()));
+                            }
+                            break;
+                        case BOOLEAN:
+                            rowData.add(String.valueOf(cell.getBooleanCellValue()));
+                            break;
+                        case FORMULA:
+                            try {
+                                rowData.add(String.valueOf(cell.getNumericCellValue()));
+                            } catch (IllegalStateException e) {
+                                rowData.add(cell.getStringCellValue());
+                            }
+                            break;
+                        default:
+                            rowData.add("");
+                    }
+                }
+                data.add(rowData);
+            }
+            
+            workbook.close();
+        }
+        
+        return data;
+    }
+
+    private String convertToConfluenceTable(List<List<String>> data) {
+        StringBuilder tableBuilder = new StringBuilder();
+        tableBuilder.append("<ac:structured-macro ac:name=\"table-excerpt\">\n");
+        tableBuilder.append("<ac:parameter ac:name=\"atlas-macro-id\">excel-data-table</ac:parameter>\n");
+        tableBuilder.append("<ac:rich-text-body>\n");
+        tableBuilder.append("<table class=\"wrapped\">\n");
+        tableBuilder.append("<colgroup>");
+        
+        if (!data.isEmpty()) {
+            for (int i = 0; i < data.get(0).size(); i++) {
+                tableBuilder.append("<col/>");
+            }
+        }
+        tableBuilder.append("</colgroup>\n");
+        
+        if (!data.isEmpty()) {
+            tableBuilder.append("<thead>\n<tr>\n");
+            for (String header : data.get(0)) {
+                tableBuilder.append("<th>").append(escapeHtml(header)).append("</th>\n");
+            }
+            tableBuilder.append("</tr>\n</thead>\n");
+        }
+        
+        tableBuilder.append("<tbody>\n");
+        for (int i = 1; i < data.size(); i++) {
+            tableBuilder.append("<tr>\n");
+            for (String cell : data.get(i)) {
+                tableBuilder.append("<td>").append(escapeHtml(cell)).append("</td>\n");
+            }
+            tableBuilder.append("</tr>\n");
+        }
+        tableBuilder.append("</tbody>\n");
+        tableBuilder.append("</table>\n");
+        tableBuilder.append("</ac:rich-text-body>\n");
+        tableBuilder.append("</ac:structured-macro>\n");
+        
+        return tableBuilder.toString();
+    }
+
+    private String escapeHtml(String input) {
+        return input.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&apos;");
+    }
+
+    private void updateConfluenceTable(File excelFile) throws Exception {
+        List<List<String>> data = readExcelFile(excelFile);
+        String tableContent = convertToConfluenceTable(data);
+        
+        String getUrl = String.format("%s/rest/api/content/%s?expand=version", confluenceUrl, pageId);
+        HttpClient httpClient = HttpClients.createDefault();
+        HttpGet httpGet = new HttpGet(getUrl);
+        
+        String auth = username + ":" + apiToken;
+        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
+        httpGet.setHeader("Authorization", "Basic " + encodedAuth);
+        
+        HttpResponse response = httpClient.execute(httpGet);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        JSONObject pageInfo = new JSONObject(responseBody);
+        int currentVersion = pageInfo.getJSONObject("version").getInt("number");
+        
+        String updateUrl = String.format("%s/rest/api/content/%s", confluenceUrl, pageId);
+        HttpPut httpPut = new HttpPut(updateUrl);
+        
+        httpPut.setHeader("Authorization", "Basic " + encodedAuth);
+        httpPut.setHeader("Content-Type", "application/json");
+        
+        LocalDateTime now = LocalDateTime.now();
+        String title = "Excel Data Table - Updated " + now.format(formatter);
+        
+        JSONObject payload = new JSONObject()
+            .put("version", new JSONObject().put("number", currentVersion + 1))
+            .put("type", "page")
+            .put("title", title)
+            .put("space", new JSONObject().put("key", spaceKey))
+            .put("body", new JSONObject()
+                .put("storage", new JSONObject()
+                    .put("value", tableContent)
+                    .put("representation", "storage")));
+        
+        StringEntity entity = new StringEntity(payload.toString(), "UTF-8");
+        httpPut.setEntity(entity);
+        
+        response = httpClient.execute(httpPut);
+        int statusCode = response.getStatusLine().getStatusCode();
+        
+        if (statusCode >= 200 && statusCode < 300) {
+            System.out.println("Table updated successfully");
+        } else {
+            responseBody = EntityUtils.toString(response.getEntity());
+            throw new RuntimeException("Failed to update page content. Status code: " + 
+                statusCode + ", Response: " + responseBody);
+        }
+    }
+
+    public static void main(String[] args) {
+        // Configure your settings here
+        String confluenceUrl = "https://your-domain.atlassian.net/wiki";
+        String username = "your-email@domain.com";
+        String apiToken = "your-api-token";
+        String spaceKey = "SPACE";
+        String pageId = "123456";
+        String excelFilePath = "path/to/your/excel/file.xlsx";
+
+        ConfluenceExcelToTable converter = new ConfluenceExcelToTable(
+            confluenceUrl, username, apiToken, spaceKey, pageId, excelFilePath);
+            
+        // Start the scheduled update
+        converter.startScheduledUpdate();
+    }
+}
+
+https://repo1.maven.org/maven2/org/apache/poi/
