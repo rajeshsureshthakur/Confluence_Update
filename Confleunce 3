@@ -143,3 +143,101 @@ public class ConfluenceExcelToTable {
         converter.startScheduledUpdate();
     }
 }
+
+
+
+
+
+
+public ConfluenceExcelToTable(String confluenceUrl, String apiToken, 
+                                String spaceKey, String pageId, String excelFilePath) {
+        this.confluenceUrl = confluenceUrl;
+        this.apiToken = apiToken;
+        this.spaceKey = spaceKey;
+        this.pageId = pageId;
+        this.excelFilePath = excelFilePath;
+        
+        // Log configuration (excluding sensitive data)
+        System.out.println("Configuration:");
+        System.out.println("Confluence URL: " + confluenceUrl);
+        System.out.println("Space Key: " + spaceKey);
+        System.out.println("Page ID: " + pageId);
+        System.out.println("Excel File: " + excelFilePath);
+    }
+
+    private void updateConfluenceTable(File excelFile) throws Exception {
+        List<List<String>> data = readExcelFile(excelFile);
+        String tableContent = convertToConfluenceTable(data);
+        
+        HttpClient httpClient = HttpClients.createDefault();
+        
+        // Get current page version
+        String getUrl = String.format("%s/wiki/api/v2/pages/%s", confluenceUrl, pageId);
+        HttpGet httpGet = new HttpGet(getUrl);
+        
+        // Set Bearer token authentication
+        httpGet.setHeader("Authorization", "Bearer " + apiToken);
+        httpGet.setHeader("Accept", "application/json");
+        
+        System.out.println("Fetching page version from: " + getUrl);
+        
+        HttpResponse response = httpClient.execute(httpGet);
+        int statusCode = response.getStatusLine().getStatusCode();
+        String responseBody = EntityUtils.toString(response.getEntity());
+        
+        System.out.println("Version fetch status code: " + statusCode);
+        System.out.println("Response body: " + responseBody);
+        
+        if (statusCode != 200) {
+            throw new RuntimeException("Failed to fetch page version. Status code: " + statusCode + 
+                ", Response: " + responseBody);
+        }
+        
+        if (responseBody.trim().isEmpty()) {
+            throw new RuntimeException("Empty response received from Confluence API");
+        }
+        
+        JSONObject pageInfo = new JSONObject(responseBody);
+        int currentVersion = pageInfo.getInt("version");
+        
+        System.out.println("Current page version: " + currentVersion);
+        
+        // Update page
+        String updateUrl = String.format("%s/wiki/api/v2/pages/%s", confluenceUrl, pageId);
+        HttpPut httpPut = new HttpPut(updateUrl);
+        
+        // Set Bearer token authentication for update request
+        httpPut.setHeader("Authorization", "Bearer " + apiToken);
+        httpPut.setHeader("Content-Type", "application/json");
+        
+        LocalDateTime now = LocalDateTime.now();
+        String title = "Excel Data Table - Updated " + now.format(formatter);
+        
+        JSONObject payload = new JSONObject()
+            .put("id", pageId)
+            .put("status", "current")
+            .put("title", title)
+            .put("spaceId", spaceKey)
+            .put("body", new JSONObject()
+                .put("representation", "storage")
+                .put("value", tableContent));
+        
+        System.out.println("Updating page with payload: " + payload.toString(2));
+        
+        StringEntity entity = new StringEntity(payload.toString(), StandardCharsets.UTF_8);
+        httpPut.setEntity(entity);
+        
+        response = httpClient.execute(httpPut);
+        statusCode = response.getStatusLine().getStatusCode();
+        responseBody = EntityUtils.toString(response.getEntity());
+        
+        System.out.println("Update status code: " + statusCode);
+        System.out.println("Update response: " + responseBody);
+        
+        if (statusCode >= 200 && statusCode < 300) {
+            System.out.println("Table updated successfully");
+        } else {
+            throw new RuntimeException("Failed to update page content. Status code: " + 
+                statusCode + ", Response: " + responseBody);
+        }
+    }
