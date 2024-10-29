@@ -247,3 +247,7 @@ public class ConfluenceExcelToTable {
 }
 
 https://repo1.maven.org/maven2/org/apache/poi/
+https://dlcdn.apache.org//httpcomponents/httpclient/binary/httpcomponents-client-4.5.13-bin.zip
+For POI (from https://archive.apache.org/dist/poi/release/bin/):
+Download: poi-bin-5.2.3-20220909.zip
+from https://github.com/stleary/JSON-java):
