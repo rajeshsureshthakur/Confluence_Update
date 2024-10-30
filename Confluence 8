@@ -1,45 +1,63 @@
-WITH CombinedMetrics AS (
-    -- Assuming your tables are named table1, table2, table3, table4
-    SELECT application, metric, value, 'CPU' as metric_type
+-- Combine all tables and create a unified view
+WITH UnifiedMetrics AS (
+    -- Table 1 (assuming CPU metrics)
+    SELECT 
+        application_name,
+        metric,
+        value,
+        'CPU' as metric_category
     FROM table1
+    
     UNION ALL
-    SELECT application, metric, value, 'Memory' as metric_type
+    
+    -- Table 2 (assuming Memory metrics)
+    SELECT 
+        application_name,
+        metric,
+        value,
+        'Memory' as metric_category
     FROM table2
+    
     UNION ALL
-    SELECT application, metric, value, 'GC' as metric_type
+    
+    -- Table 3 (assuming GC metrics)
+    SELECT 
+        application_name,
+        metric,
+        value,
+        'GC' as metric_category
     FROM table3
+    
     UNION ALL
-    SELECT application, metric, value, 'Other' as metric_type
+    
+    -- Table 4 (assuming other metrics)
+    SELECT 
+        application_name,
+        metric,
+        value,
+        'Other' as metric_category
     FROM table4
 ),
-PivotedData AS (
+
+-- Create a pivot to transform the data
+MetricSummary AS (
     SELECT 
-        application,
-        MAX(CASE WHEN metric = 'CPU Utilization' THEN value END) as cpu_utilization,
-        MAX(CASE WHEN metric = 'Memory Used (GB)' THEN value END) as memory_used,
-        MAX(CASE WHEN metric = 'Memory Total (GB)' THEN value END) as memory_total,
-        MAX(CASE WHEN metric = 'GC Count' THEN value END) as gc_count,
-        MAX(CASE WHEN metric = 'GC Duration (ms)' THEN value END) as gc_duration
-    FROM CombinedMetrics
-    GROUP BY application
+        application_name,
+        MAX(CASE WHEN metric_category = 'CPU' THEN value END) as cpu_metric,
+        MAX(CASE WHEN metric_category = 'Memory' THEN value END) as memory_metric,
+        MAX(CASE WHEN metric_category = 'GC' THEN value END) as gc_metric,
+        MAX(CASE WHEN metric_category = 'Other' THEN value END) as other_metric
+    FROM UnifiedMetrics
+    GROUP BY application_name
 )
+
+-- Final formatted output
 SELECT 
-    application,
-    COALESCE(cpu_utilization, 'N/A') as "CPU Utilization (%)",
-    COALESCE(memory_used, 'N/A') as "Memory Used (GB)",
-    COALESCE(memory_total, 'N/A') as "Total Memory (GB)",
-    CASE 
-        WHEN memory_used IS NOT NULL AND memory_total IS NOT NULL 
-        THEN CAST(ROUND(CAST(memory_used AS FLOAT) / CAST(memory_total AS FLOAT) * 100, 2) AS VARCHAR) + '%'
-        ELSE 'N/A'
-    END as "Memory Utilization (%)",
-    COALESCE(gc_count, 'N/A') as "GC Events",
-    COALESCE(gc_duration, 'N/A') as "Avg GC Duration (ms)"
-FROM PivotedData
+    application_name as "Application",
+    COALESCE(cpu_metric, 'N/A') as "CPU Metrics",
+    COALESCE(memory_metric, 'N/A') as "Memory Metrics",
+    COALESCE(gc_metric, 'N/A') as "GC Metrics",
+    COALESCE(other_metric, 'N/A') as "Other Metrics"
+FROM MetricSummary
 ORDER BY 
-    CASE 
-        WHEN cpu_utilization IS NULL THEN 1 
-        WHEN CAST(cpu_utilization AS FLOAT) >= 80 THEN 0
-        ELSE 2 
-    END,
-    application;
+    application_name;
