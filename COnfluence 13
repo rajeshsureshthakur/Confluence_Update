@@ -1,0 +1,9 @@
+SELECT 
+    'Application',
+    'Value' as 'CPU Value',
+    CASE
+        WHEN 'Value' >= 90 THEN '<strong style="color: red;">⚠️ Critical</strong>'
+        WHEN 'Value' >= 80 THEN '<strong style="color: orange;">⚡ Warning</strong>'
+        ELSE '<span style="color: green;">✓ Normal</span>'
+    END as 'Status'
+FROM T1 
