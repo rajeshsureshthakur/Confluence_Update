@@ -1,63 +1,45 @@
--- Combine all tables and create a unified view
-WITH UnifiedMetrics AS (
-    -- Table 1 (assuming CPU metrics)
-    SELECT 
-        application_name,
-        metric,
-        value,
-        'CPU' as metric_category
-    FROM table1
-    
+-- Combine all CPU metrics tables
+WITH UnifiedCPUMetrics AS (
+    SELECT application_name, metric, value, 'T1' as source_table
+    FROM T1
     UNION ALL
-    
-    -- Table 2 (assuming Memory metrics)
-    SELECT 
-        application_name,
-        metric,
-        value,
-        'Memory' as metric_category
-    FROM table2
-    
+    SELECT application_name, metric, value, 'T2' as source_table
+    FROM T2
     UNION ALL
-    
-    -- Table 3 (assuming GC metrics)
-    SELECT 
-        application_name,
-        metric,
-        value,
-        'GC' as metric_category
-    FROM table3
-    
+    SELECT application_name, metric, value, 'T3' as source_table
+    FROM T3
     UNION ALL
-    
-    -- Table 4 (assuming other metrics)
-    SELECT 
-        application_name,
-        metric,
-        value,
-        'Other' as metric_category
-    FROM table4
+    SELECT application_name, metric, value, 'T4' as source_table
+    FROM T4
 ),
 
--- Create a pivot to transform the data
-MetricSummary AS (
+-- Create a pivot of CPU metrics by application
+CPUSummary AS (
     SELECT 
         application_name,
-        MAX(CASE WHEN metric_category = 'CPU' THEN value END) as cpu_metric,
-        MAX(CASE WHEN metric_category = 'Memory' THEN value END) as memory_metric,
-        MAX(CASE WHEN metric_category = 'GC' THEN value END) as gc_metric,
-        MAX(CASE WHEN metric_category = 'Other' THEN value END) as other_metric
-    FROM UnifiedMetrics
+        MAX(CASE WHEN source_table = 'T1' THEN value END) as cpu_metric_t1,
+        MAX(CASE WHEN source_table = 'T2' THEN value END) as cpu_metric_t2,
+        MAX(CASE WHEN source_table = 'T3' THEN value END) as cpu_metric_t3,
+        MAX(CASE WHEN source_table = 'T4' THEN value END) as cpu_metric_t4,
+        -- Calculate average across all tables
+        AVG(CAST(value AS FLOAT)) as avg_cpu_value
+    FROM UnifiedCPUMetrics
     GROUP BY application_name
 )
 
--- Final formatted output
+-- Final formatted output with health indicators
 SELECT 
     application_name as "Application",
-    COALESCE(cpu_metric, 'N/A') as "CPU Metrics",
-    COALESCE(memory_metric, 'N/A') as "Memory Metrics",
-    COALESCE(gc_metric, 'N/A') as "GC Metrics",
-    COALESCE(other_metric, 'N/A') as "Other Metrics"
-FROM MetricSummary
+    COALESCE(cpu_metric_t1, 'N/A') as "CPU Metric (T1)",
+    COALESCE(cpu_metric_t2, 'N/A') as "CPU Metric (T2)",
+    COALESCE(cpu_metric_t3, 'N/A') as "CPU Metric (T3)",
+    COALESCE(cpu_metric_t4, 'N/A') as "CPU Metric (T4)",
+    ROUND(avg_cpu_value, 2) as "Average CPU",
+    CASE 
+        WHEN avg_cpu_value >= 80 THEN '🔴 Critical'
+        WHEN avg_cpu_value >= 60 THEN '🟡 Warning'
+        ELSE '🟢 Healthy'
+    END as "Status"
+FROM CPUSummary
 ORDER BY 
-    application_name;
+    avg_cpu_value DESC;
