@@ -1,0 +1,57 @@
+SELECT 
+    'Application',
+    'Value' as 'CPU Value',
+    CASE
+        WHEN 'Value' >= 90 THEN '<div style="background-color: #FFE7E7; color: red; padding: 5px; border-radius: 3px;">⚠️ Critical</div>'
+        WHEN 'Value' >= 80 THEN '<div style="background-color: #FFF3E0; color: #FF9800; padding: 5px; border-radius: 3px;">⚡ Warning</div>'
+        ELSE '<div style="background-color: #E8F5E9; color: green; padding: 5px; border-radius: 3px;">✓ Normal</div>'
+    END as 'Status'
+FROM T1 
+WHERE 'Value' >= 80
+
+UNION ALL
+
+SELECT 
+    'Application',
+    'Value' as 'CPU Value',
+    CASE
+        WHEN 'Value' >= 90 THEN '<div style="background-color: #FFE7E7; color: red; padding: 5px; border-radius: 3px;">⚠️ Critical</div>'
+        WHEN 'Value' >= 80 THEN '<div style="background-color: #FFF3E0; color: #FF9800; padding: 5px; border-radius: 3px;">⚡ Warning</div>'
+        ELSE '<div style="background-color: #E8F5E9; color: green; padding: 5px; border-radius: 3px;">✓ Normal</div>'
+    END as 'Status'
+FROM T2
+WHERE 'Value' >= 80
+
+UNION ALL
+
+SELECT 
+    'Application',
+    'Value' as 'CPU Value',
+    CASE
+        WHEN 'Value' >= 90 THEN '<div style="background-color: #FFE7E7; color: red; padding: 5px; border-radius: 3px;">⚠️ Critical</div>'
+        WHEN 'Value' >= 80 THEN '<div style="background-color: #FFF3E0; color: #FF9800; padding: 5px; border-radius: 3px;">⚡ Warning</div>'
+        ELSE '<div style="background-color: #E8F5E9; color: green; padding: 5px; border-radius: 3px;">✓ Normal</div>'
+    END as 'Status'
+FROM T3
+WHERE 'Value' >= 80
+
+UNION ALL
+
+SELECT 
+    'Application',
+    'Value' as 'CPU Value',
+    CASE
+        WHEN 'Value' >= 90 THEN '<div style="background-color: #FFE7E7; color: red; padding: 5px; border-radius: 3px;">⚠️ Critical</div>'
+        WHEN 'Value' >= 80 THEN '<div style="background-color: #FFF3E0; color: #FF9800; padding: 5px; border-radius: 3px;">⚡ Warning</div>'
+        ELSE '<div style="background-color: #E8F5E9; color: green; padding: 5px; border-radius: 3px;">✓ Normal</div>'
+    END as 'Status'
+FROM T4
+WHERE 'Value' >= 80
+
+ORDER BY 
+    CASE 
+        WHEN 'CPU Value' >= 90 THEN 1
+        WHEN 'CPU Value' >= 80 THEN 2
+        ELSE 3
+    END,
+    'CPU Value' DESC
