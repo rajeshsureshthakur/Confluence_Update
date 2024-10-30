@@ -1,0 +1,51 @@
+SELECT 
+    'Application',
+    'Value' as 'CPU Value',
+    CASE
+        WHEN 'Value' >= 90 THEN 'Critical'
+        WHEN 'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END as 'Status'
+FROM T1 
+WHERE 'Value' >= 80
+
+UNION ALL
+
+SELECT 
+    'Application',
+    'Value',
+    CASE
+        WHEN 'Value' >= 90 THEN 'Critical'
+        WHEN 'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END
+FROM T2
+WHERE 'Value' >= 80
+
+UNION ALL
+
+SELECT 
+    'Application',
+    'Value',
+    CASE
+        WHEN 'Value' >= 90 THEN 'Critical'
+        WHEN 'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END
+FROM T3
+WHERE 'Value' >= 80
+
+UNION ALL
+
+SELECT 
+    'Application',
+    'Value',
+    CASE
+        WHEN 'Value' >= 90 THEN 'Critical'
+        WHEN 'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END
+FROM T4
+WHERE 'Value' >= 80
+
+ORDER BY 'CPU Value' DESC
