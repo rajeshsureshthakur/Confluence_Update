@@ -55,3 +55,14 @@ ORDER BY
         ELSE 3
     END,
     'CPU Value' DESC
+
+
+
+{style:
+    .critical {background-color: #FFE7E7; color: #D32F2F;}
+    .warning {background-color: #FFF3E0; color: #EF6C00;}
+    .healthy {background-color: #E8F5E9; color: #2E7D32;}
+    .trend-up {color: #2E7D32;}
+    .trend-down {color: #D32F2F;}
+    .trend-stable {color: #1976D2;}
+}
