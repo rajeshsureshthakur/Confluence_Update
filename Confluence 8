@@ -1,45 +1,29 @@
--- Combine all CPU metrics tables
-WITH UnifiedCPUMetrics AS (
-    SELECT application_name, metric, value, 'T1' as source_table
-    FROM T1
-    UNION ALL
-    SELECT application_name, metric, value, 'T2' as source_table
-    FROM T2
-    UNION ALL
-    SELECT application_name, metric, value, 'T3' as source_table
-    FROM T3
-    UNION ALL
-    SELECT application_name, metric, value, 'T4' as source_table
-    FROM T4
-),
+join(T1, T2, T3, T4) on 'Application Name'
+| format('Value T1', '%.1f%%')
+| format('Value T2', '%.1f%%')
+| format('Value T3', '%.1f%%')
+| format('Value T4', '%.1f%%')
+| calc('Average', '(Value T1 + Value T2 + Value T3 + Value T4)/4')
+| format('Average', '%.1f%%')
+| calc('Status', 'if(Average >= 80, "🔴 Critical", if(Average >= 60, "🟡 Warning", "🟢 Healthy"))')
 
--- Create a pivot of CPU metrics by application
-CPUSummary AS (
-    SELECT 
-        application_name,
-        MAX(CASE WHEN source_table = 'T1' THEN value END) as cpu_metric_t1,
-        MAX(CASE WHEN source_table = 'T2' THEN value END) as cpu_metric_t2,
-        MAX(CASE WHEN source_table = 'T3' THEN value END) as cpu_metric_t3,
-        MAX(CASE WHEN source_table = 'T4' THEN value END) as cpu_metric_t4,
-        -- Calculate average across all tables
-        AVG(CAST(value AS FLOAT)) as avg_cpu_value
-    FROM UnifiedCPUMetrics
-    GROUP BY application_name
-)
+| calc('Max CPU', 'max(Value T1, Value T2, Value T3, Value T4)')
+| calc('Min CPU', 'min(Value T1, Value T2, Value T3, Value T4)')
+| calc('Range', 'Max CPU - Min CPU')
+| format('Range', '%.1f%%')
 
--- Final formatted output with health indicators
-SELECT 
-    application_name as "Application",
-    COALESCE(cpu_metric_t1, 'N/A') as "CPU Metric (T1)",
-    COALESCE(cpu_metric_t2, 'N/A') as "CPU Metric (T2)",
-    COALESCE(cpu_metric_t3, 'N/A') as "CPU Metric (T3)",
-    COALESCE(cpu_metric_t4, 'N/A') as "CPU Metric (T4)",
-    ROUND(avg_cpu_value, 2) as "Average CPU",
-    CASE 
-        WHEN avg_cpu_value >= 80 THEN '🔴 Critical'
-        WHEN avg_cpu_value >= 60 THEN '🟡 Warning'
-        ELSE '🟢 Healthy'
-    END as "Status"
-FROM CPUSummary
-ORDER BY 
-    avg_cpu_value DESC;
+| style('Average', if(Average >= 80, 'background-color: #ffebee') )
+| style('Average', if(Average >= 60 && Average < 80, 'background-color: #fff3e0') )
+| style('Average', if(Average < 60, 'background-color: #e8f5e9') )
+
+| calc('Std Dev', 'std(Value T1, Value T2, Value T3, Value T4)')
+| format('Std Dev', '%.2f')
+
+| calc('Trend', 'if(Value T4 > Value T3, "↑", if(Value T4 < Value T3, "↓", "→"))')
+
+| calc('Health Score', '100 - Average')
+| format('Health Score', '%.0f')
+
+| style('Status', if(contains(Status, "Critical"), 'font-weight: bold'))
+| sort('Average', 'desc')
+| highlight('Average', '> 80', '#ffebee')
