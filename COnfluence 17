@@ -1,0 +1,47 @@
+SELECT
+T1.'Application',
+T1.'Value' as 'CPU Value',
+CASE
+    WHEN T1.'Value' >= 20 THEN "Critical"
+    WHEN T1.'Value' >= 10 THEN "Warning"
+    ELSE 'Normal'
+END as 'Status'
+FROM T1
+
+UNION ALL
+
+SELECT
+T2.'Application',
+T2.'Value' as 'CPU Value',
+CASE
+    WHEN T2.'Value' >= 20 THEN "Critical"
+    WHEN T2.'Value' >= 10 THEN "Warning"
+    ELSE 'Normal'
+END as 'Status'
+FROM T2
+
+UNION ALL
+
+SELECT
+T3.'Application',
+T3.'Value' as 'CPU Value',
+CASE
+    WHEN T3.'Value' >= 20 THEN "Critical"
+    WHEN T3.'Value' >= 10 THEN "Warning"
+    ELSE 'Normal'
+END as 'Status'
+FROM T3
+
+UNION ALL
+
+SELECT
+T4.'Application',
+T4.'Value' as 'CPU Value',
+CASE
+    WHEN T4.'Value' >= 20 THEN "Critical"
+    WHEN T4.'Value' >= 10 THEN "Warning"
+    ELSE 'Normal'
+END as 'Status'
+FROM T4
+
+ORDER BY 'CPU Value' DESC
