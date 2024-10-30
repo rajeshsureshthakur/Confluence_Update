@@ -1,0 +1,25 @@
+SELECT 
+    T1.'Application',
+    CASE
+        WHEN T1.'Value' >= 90 OR T2.'Value' >= 90 OR T3.'Value' >= 90 OR T4.'Value' >= 90 THEN 
+            MAX(GREATEST(T1.'Value', T2.'Value', T3.'Value', T4.'Value')) || '%'
+        WHEN T1.'Value' >= 80 OR T2.'Value' >= 80 OR T3.'Value' >= 80 OR T4.'Value' >= 80 THEN 
+            MAX(GREATEST(T1.'Value', T2.'Value', T3.'Value', T4.'Value')) || '%'
+        ELSE 'Normal'
+    END as 'Max CPU Value',
+    CASE
+        WHEN T1.'Value' >= 90 OR T2.'Value' >= 90 OR T3.'Value' >= 90 OR T4.'Value' >= 90 THEN '🔴 Critical'
+        WHEN T1.'Value' >= 80 OR T2.'Value' >= 80 OR T3.'Value' >= 80 OR T4.'Value' >= 80 THEN '⚠️ Warning'
+        ELSE '✅ Normal'
+    END as 'Status'
+FROM T1 
+LEFT OUTER JOIN T2 ON T1.'Application' = T2.'Application'
+LEFT OUTER JOIN T3 ON T1.'Application' = T3.'Application'
+LEFT OUTER JOIN T4 ON T1.'Application' = T4.'Application'
+ORDER BY 
+    CASE
+        WHEN T1.'Value' >= 90 OR T2.'Value' >= 90 OR T3.'Value' >= 90 OR T4.'Value' >= 90 THEN 1
+        WHEN T1.'Value' >= 80 OR T2.'Value' >= 80 OR T3.'Value' >= 80 OR T4.'Value' >= 80 THEN 2
+        ELSE 3
+    END,
+    'Max CPU Value' DESC
