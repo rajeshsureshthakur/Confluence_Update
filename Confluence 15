@@ -1,59 +1,33 @@
 SELECT 
     "Application",
     "Value" as "CPU Value",
-    CASE
-        WHEN CAST("Value" as DECIMAL) >= 90 THEN 'Critical'
-        WHEN CAST("Value" as DECIMAL) >= 80 THEN 'Warning'
-        ELSE 'Normal'
-    END as "Status"
+    'Warning' as "Status"
 FROM T1 
-WHERE "Metric" LIKE '%CPU Usage%' 
-  AND "Value" IS NOT NULL 
-  AND CAST("Value" as DECIMAL) >= 80
+WHERE "Metric" LIKE 'JVM%CPU%'
 
 UNION ALL
 
 SELECT 
     "Application",
-    "Value" as "CPU Value",
-    CASE
-        WHEN CAST("Value" as DECIMAL) >= 90 THEN 'Critical'
-        WHEN CAST("Value" as DECIMAL) >= 80 THEN 'Warning'
-        ELSE 'Normal'
-    END as "Status"
+    "Value",
+    'Warning'
 FROM T2
-WHERE "Metric" LIKE '%CPU Usage%' 
-  AND "Value" IS NOT NULL 
-  AND CAST("Value" as DECIMAL) >= 80
+WHERE "Metric" LIKE 'JVM%CPU%'
 
 UNION ALL
 
 SELECT 
     "Application",
-    "Value" as "CPU Value",
-    CASE
-        WHEN CAST("Value" as DECIMAL) >= 90 THEN 'Critical'
-        WHEN CAST("Value" as DECIMAL) >= 80 THEN 'Warning'
-        ELSE 'Normal'
-    END as "Status"
+    "Value",
+    'Warning'
 FROM T3
-WHERE "Metric" LIKE '%CPU Usage%' 
-  AND "Value" IS NOT NULL 
-  AND CAST("Value" as DECIMAL) >= 80
+WHERE "Metric" LIKE 'JVM%CPU%'
 
 UNION ALL
 
 SELECT 
     "Application",
-    "Value" as "CPU Value",
-    CASE
-        WHEN CAST("Value" as DECIMAL) >= 90 THEN 'Critical'
-        WHEN CAST("Value" as DECIMAL) >= 80 THEN 'Warning'
-        ELSE 'Normal'
-    END as "Status"
+    "Value",
+    'Warning'
 FROM T4
-WHERE "Metric" LIKE '%CPU Usage%' 
-  AND "Value" IS NOT NULL 
-  AND CAST("Value" as DECIMAL) >= 80
-
-ORDER BY CAST("CPU Value" as DECIMAL) DESC
+WHERE "Metric" LIKE 'JVM%CPU%'
