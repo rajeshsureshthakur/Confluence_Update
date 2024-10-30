@@ -1,17 +1,51 @@
-SELECT "Application", "Metric", "Value" 
-FROM T1
+SELECT 
+    T1.'Application',
+    T1.'Value' as 'CPU Value',
+    CASE
+        WHEN T1.'Value' >= 90 THEN 'Critical'
+        WHEN T1.'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END as 'Status'
+FROM T1 
+WHERE T1.'Metric' LIKE '%CPU%'
 
 UNION ALL
 
-SELECT "Application", "Metric", "Value" 
+SELECT 
+    T2.'Application',
+    T2.'Value',
+    CASE
+        WHEN T2.'Value' >= 90 THEN 'Critical'
+        WHEN T2.'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END
 FROM T2
+WHERE T2.'Metric' LIKE '%CPU%'
 
 UNION ALL
 
-SELECT "Application", "Metric", "Value" 
+SELECT 
+    T3.'Application',
+    T3.'Value',
+    CASE
+        WHEN T3.'Value' >= 90 THEN 'Critical'
+        WHEN T3.'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END
 FROM T3
+WHERE T3.'Metric' LIKE '%CPU%'
 
 UNION ALL
 
-SELECT "Application", "Metric", "Value" 
+SELECT 
+    T4.'Application',
+    T4.'Value',
+    CASE
+        WHEN T4.'Value' >= 90 THEN 'Critical'
+        WHEN T4.'Value' >= 80 THEN 'Warning'
+        ELSE 'Normal'
+    END
 FROM T4
+WHERE T4.'Metric' LIKE '%CPU%'
+
+ORDER BY 'CPU Value' DESC
