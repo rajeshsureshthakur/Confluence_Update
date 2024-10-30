@@ -1,28 +1,28 @@
 SELECT 
     T1.'Application',
-    T1.'Value' as 'CPU Value',
+    T1.'Value' as 'CPU Value T1',
     CASE 
         WHEN T1.'Value' >= 95 THEN '🔴 Critical'
         WHEN T1.'Value' >= 80 THEN '⚠️ Warning'
     END as 'Status T1',
-    T2.'Value' as 'CPU Value',
+    T2.'Value' as 'CPU Value T2',
     CASE 
         WHEN T2.'Value' >= 95 THEN '🔴 Critical'
         WHEN T2.'Value' >= 80 THEN '⚠️ Warning'
     END as 'Status T2',
-    T3.'Value' as 'CPU Value',
+    T3.'Value' as 'CPU Value T3',
     CASE 
         WHEN T3.'Value' >= 95 THEN '🔴 Critical'
         WHEN T3.'Value' >= 80 THEN '⚠️ Warning'
     END as 'Status T3',
-    T4.'Value' as 'CPU Value',
+    T4.'Value' as 'CPU Value T4',
     CASE 
         WHEN T4.'Value' >= 95 THEN '🔴 Critical'
         WHEN T4.'Value' >= 80 THEN '⚠️ Warning'
     END as 'Status T4'
 FROM T1 
-LEFT OUTER JOIN T2 ON 'Application'
-LEFT OUTER JOIN T3 ON 'Application'
-LEFT OUTER JOIN T4 ON 'Application'
+LEFT OUTER JOIN T2 ON T1.'Application' = T2.'Application'
+LEFT OUTER JOIN T3 ON T1.'Application' = T3.'Application'
+LEFT OUTER JOIN T4 ON T1.'Application' = T4.'Application'
 WHERE T1.'Value' >= 80 OR T2.'Value' >= 80 OR T3.'Value' >= 80 OR T4.'Value' >= 80
 ORDER BY T1.'Value' DESC
