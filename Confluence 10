@@ -66,3 +66,20 @@ ORDER BY
     .trend-down {color: #D32F2F;}
     .trend-stable {color: #1976D2;}
 }
+
+{style:
+    .critical {
+        background-color: #FFE7E7;
+        color: #D32F2F;
+        font-weight: bold;
+    }
+    .warning {
+        background-color: #FFF3E0;
+        color: #EF6C00;
+        font-weight: bold;
+    }
+    .normal {
+        background-color: #E8F5E9;
+        color: #2E7D32;
+    }
+}
