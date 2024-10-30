@@ -1,49 +1,17 @@
-SELECT 
-    "Application",
-    "Value" as "CPU Value",
-    CASE
-        WHEN "Value" >= '90' THEN Critical
-        WHEN "Value" >= '80' THEN Warning
-        ELSE Normal
-    END
-FROM T1 
-WHERE "Metric" LIKE 'JVM%CPU%'
+SELECT "Application", "Metric", "Value" 
+FROM T1
 
 UNION ALL
 
-SELECT 
-    "Application",
-    "Value",
-    CASE
-        WHEN "Value" >= '90' THEN Critical
-        WHEN "Value" >= '80' THEN Warning
-        ELSE Normal
-    END
+SELECT "Application", "Metric", "Value" 
 FROM T2
-WHERE "Metric" LIKE 'JVM%CPU%'
 
 UNION ALL
 
-SELECT 
-    "Application",
-    "Value",
-    CASE
-        WHEN "Value" >= '90' THEN Critical
-        WHEN "Value" >= '80' THEN Warning
-        ELSE Normal
-    END
+SELECT "Application", "Metric", "Value" 
 FROM T3
-WHERE "Metric" LIKE 'JVM%CPU%'
 
 UNION ALL
 
-SELECT 
-    "Application",
-    "Value",
-    CASE
-        WHEN "Value" >= '90' THEN Critical
-        WHEN "Value" >= '80' THEN Warning
-        ELSE Normal
-    END
+SELECT "Application", "Metric", "Value" 
 FROM T4
-WHERE "Metric" LIKE 'JVM%CPU%'
