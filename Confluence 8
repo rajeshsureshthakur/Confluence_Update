@@ -1,29 +1,43 @@
-join(T1, T2, T3, T4) on 'Application Name'
-| format('Value T1', '%.1f%%')
-| format('Value T2', '%.1f%%')
-| format('Value T3', '%.1f%%')
-| format('Value T4', '%.1f%%')
-| calc('Average', '(Value T1 + Value T2 + Value T3 + Value T4)/4')
-| format('Average', '%.1f%%')
-| calc('Status', 'if(Average >= 80, "🔴 Critical", if(Average >= 60, "🟡 Warning", "🟢 Healthy"))')
-
-| calc('Max CPU', 'max(Value T1, Value T2, Value T3, Value T4)')
-| calc('Min CPU', 'min(Value T1, Value T2, Value T3, Value T4)')
-| calc('Range', 'Max CPU - Min CPU')
-| format('Range', '%.1f%%')
-
-| style('Average', if(Average >= 80, 'background-color: #ffebee') )
-| style('Average', if(Average >= 60 && Average < 80, 'background-color: #fff3e0') )
-| style('Average', if(Average < 60, 'background-color: #e8f5e9') )
-
-| calc('Std Dev', 'std(Value T1, Value T2, Value T3, Value T4)')
-| format('Std Dev', '%.2f')
-
-| calc('Trend', 'if(Value T4 > Value T3, "↑", if(Value T4 < Value T3, "↓", "→"))')
-
-| calc('Health Score', '100 - Average')
-| format('Health Score', '%.0f')
-
-| style('Status', if(contains(Status, "Critical"), 'font-weight: bold'))
-| sort('Average', 'desc')
-| highlight('Average', '> 80', '#ffebee')
+SELECT 
+    T1."Application Name",
+    CASE
+        WHEN T1."Value" >= 80 THEN '⛔ ' || T1."Value" || '%'
+        WHEN T1."Value" >= 60 THEN '⚠️ ' || T1."Value" || '%'
+        ELSE '✅ ' || T1."Value" || '%'
+    END as "CPU T1",
+    CASE
+        WHEN T2."Value" >= 80 THEN '⛔ ' || T2."Value" || '%'
+        WHEN T2."Value" >= 60 THEN '⚠️ ' || T2."Value" || '%'
+        ELSE '✅ ' || T2."Value" || '%'
+    END as "CPU T2",
+    CASE
+        WHEN T3."Value" >= 80 THEN '⛔ ' || T3."Value" || '%'
+        WHEN T3."Value" >= 60 THEN '⚠️ ' || T3."Value" || '%'
+        ELSE '✅ ' || T3."Value" || '%'
+    END as "CPU T3",
+    CASE
+        WHEN T4."Value" >= 80 THEN '⛔ ' || T4."Value" || '%'
+        WHEN T4."Value" >= 60 THEN '⚠️ ' || T4."Value" || '%'
+        ELSE '✅ ' || T4."Value" || '%'
+    END as "CPU T4",
+    ROUND(AVG("Value"), 2) as "Average CPU",
+    MAX("Value") as "Peak CPU",
+    MIN("Value") as "Min CPU",
+    ROUND(STDDEV("Value"), 2) as "Std Deviation",
+    MAX("Value") - MIN("Value") as "CPU Range",
+    CASE 
+        WHEN AVG("Value") >= 80 THEN '🔴 Critical'
+        WHEN AVG("Value") >= 60 THEN '🟡 Warning'
+        ELSE '🟢 Healthy'
+    END as "Status",
+    CASE
+        WHEN T4."Value" > T3."Value" THEN '↑ Rising'
+        WHEN T4."Value" < T3."Value" THEN '↓ Falling'
+        ELSE '→ Stable'
+    END as "Trend"
+FROM T1 
+LEFT OUTER JOIN T2 ON "Application Name"
+LEFT OUTER JOIN T3 ON "Application Name"
+LEFT OUTER JOIN T4 ON "Application Name"
+GROUP BY "Application Name"
+ORDER BY "Average CPU" DESC
