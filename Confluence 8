@@ -1,46 +1,46 @@
 SELECT 
-    T1."Application Name",
+    T1.'Application',
     CASE
-        WHEN T1."Value" >= 80 THEN '⛔ ' || T1."Value" || '%'
-        WHEN T1."Value" >= 60 THEN '⚠️ ' || T1."Value" || '%'
-        ELSE '✅ ' || T1."Value" || '%'
-    END as "CPU T1",
+        WHEN T1.'Value' >= 80 THEN '⛔ ' || T1.'Value' || '%'
+        WHEN T1.'Value' >= 60 THEN '⚠️ ' || T1.'Value' || '%'
+        ELSE '✅ ' || T1.'Value' || '%'
+    END as 'CPU T1',
     CASE
-        WHEN T2."Value" >= 80 THEN '⛔ ' || T2."Value" || '%'
-        WHEN T2."Value" >= 60 THEN '⚠️ ' || T2."Value" || '%'
-        ELSE '✅ ' || T2."Value" || '%'
-    END as "CPU T2",
+        WHEN T2.'Value' >= 80 THEN '⛔ ' || T2.'Value' || '%'
+        WHEN T2.'Value' >= 60 THEN '⚠️ ' || T2.'Value' || '%'
+        ELSE '✅ ' || T2.'Value' || '%'
+    END as 'CPU T2',
     CASE
-        WHEN T3."Value" >= 80 THEN '⛔ ' || T3."Value" || '%'
-        WHEN T3."Value" >= 60 THEN '⚠️ ' || T3."Value" || '%'
-        ELSE '✅ ' || T3."Value" || '%'
-    END as "CPU T3",
+        WHEN T3.'Value' >= 80 THEN '⛔ ' || T3.'Value' || '%'
+        WHEN T3.'Value' >= 60 THEN '⚠️ ' || T3.'Value' || '%'
+        ELSE '✅ ' || T3.'Value' || '%'
+    END as 'CPU T3',
     CASE
-        WHEN T4."Value" >= 80 THEN '⛔ ' || T4."Value" || '%'
-        WHEN T4."Value" >= 60 THEN '⚠️ ' || T4."Value" || '%'
-        ELSE '✅ ' || T4."Value" || '%'
-    END as "CPU T4",
-    ROUND(AVG("Value"), 2) as "Average CPU",
-    MAX("Value") as "Peak CPU",
-    MIN("Value") as "Min CPU",
-    ROUND(STDDEV("Value"), 2) as "Std Deviation",
-    MAX("Value") - MIN("Value") as "CPU Range",
+        WHEN T4.'Value' >= 80 THEN '⛔ ' || T4.'Value' || '%'
+        WHEN T4.'Value' >= 60 THEN '⚠️ ' || T4.'Value' || '%'
+        ELSE '✅ ' || T4.'Value' || '%'
+    END as 'CPU T4',
+    ROUND(AVG('Value'), 2) as 'Average CPU',
+    MAX('Value') as 'Peak CPU',
+    MIN('Value') as 'Min CPU',
+    ROUND(STDDEV('Value'), 2) as 'Std Deviation',
+    MAX('Value') - MIN('Value') as 'CPU Range',
     CASE 
-        WHEN AVG("Value") >= 80 THEN '🔴 Critical'
-        WHEN AVG("Value") >= 60 THEN '🟡 Warning'
+        WHEN AVG('Value') >= 80 THEN '🔴 Critical'
+        WHEN AVG('Value') >= 60 THEN '🟡 Warning'
         ELSE '🟢 Healthy'
-    END as "Status",
+    END as 'Status',
     CASE
-        WHEN T4."Value" > T3."Value" THEN '↑ Rising'
-        WHEN T4."Value" < T3."Value" THEN '↓ Falling'
+        WHEN T4.'Value' > T3.'Value' THEN '↑ Rising'
+        WHEN T4.'Value' < T3.'Value' THEN '↓ Falling'
         ELSE '→ Stable'
-    END as "Trend"
+    END as 'Trend'
 FROM T1 
-LEFT OUTER JOIN T2 ON "Application Name"
-LEFT OUTER JOIN T3 ON "Application Name"
-LEFT OUTER JOIN T4 ON "Application Name"
-GROUP BY "Application Name"
-ORDER BY "Average CPU" DESC
+LEFT OUTER JOIN T2 ON 'Application'
+LEFT OUTER JOIN T3 ON 'Application'
+LEFT OUTER JOIN T4 ON 'Application'
+GROUP BY 'Application'
+ORDER BY 'Average CPU' DESC
 
 {style:
     .critical {background-color: #FFE7E7; color: #D32F2F;}
