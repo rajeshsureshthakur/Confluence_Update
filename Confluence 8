@@ -1,0 +1,45 @@
+WITH CombinedMetrics AS (
+    -- Assuming your tables are named table1, table2, table3, table4
+    SELECT application, metric, value, 'CPU' as metric_type
+    FROM table1
+    UNION ALL
+    SELECT application, metric, value, 'Memory' as metric_type
+    FROM table2
+    UNION ALL
+    SELECT application, metric, value, 'GC' as metric_type
+    FROM table3
+    UNION ALL
+    SELECT application, metric, value, 'Other' as metric_type
+    FROM table4
+),
+PivotedData AS (
+    SELECT 
+        application,
+        MAX(CASE WHEN metric = 'CPU Utilization' THEN value END) as cpu_utilization,
+        MAX(CASE WHEN metric = 'Memory Used (GB)' THEN value END) as memory_used,
+        MAX(CASE WHEN metric = 'Memory Total (GB)' THEN value END) as memory_total,
+        MAX(CASE WHEN metric = 'GC Count' THEN value END) as gc_count,
+        MAX(CASE WHEN metric = 'GC Duration (ms)' THEN value END) as gc_duration
+    FROM CombinedMetrics
+    GROUP BY application
+)
+SELECT 
+    application,
+    COALESCE(cpu_utilization, 'N/A') as "CPU Utilization (%)",
+    COALESCE(memory_used, 'N/A') as "Memory Used (GB)",
+    COALESCE(memory_total, 'N/A') as "Total Memory (GB)",
+    CASE 
+        WHEN memory_used IS NOT NULL AND memory_total IS NOT NULL 
+        THEN CAST(ROUND(CAST(memory_used AS FLOAT) / CAST(memory_total AS FLOAT) * 100, 2) AS VARCHAR) + '%'
+        ELSE 'N/A'
+    END as "Memory Utilization (%)",
+    COALESCE(gc_count, 'N/A') as "GC Events",
+    COALESCE(gc_duration, 'N/A') as "Avg GC Duration (ms)"
+FROM PivotedData
+ORDER BY 
+    CASE 
+        WHEN cpu_utilization IS NULL THEN 1 
+        WHEN CAST(cpu_utilization AS FLOAT) >= 80 THEN 0
+        ELSE 2 
+    END,
+    application;
