@@ -6,11 +6,11 @@
             <tr>
                 <td>
                     <div style="margin:5px 0;">
-                        <label style="display:block; margin-bottom:5px;"><b>Last Test Results CSV</b> (Transaction Name, Response Time, Pass Count, Fail Count)</label>
+                        <label style="display:block; margin-bottom:5px;"><b>Last Test Results CSV</b> (Transaction Name, Response Time, Pass Count)</label>
                         <input type="file" id="lastResultsFile" accept=".csv">
                     </div>
                     <div style="margin:5px 0;">
-                        <label style="display:block; margin-bottom:5px;"><b>Test Planning Data CSV</b> (Transaction Name, Script Name, SLA, Planned TPH, Previous VUsers, Think Time, Pacing)</label>
+                        <label style="display:block; margin-bottom:5px;"><b>Test Planning Data CSV</b> (Transaction Name, Script Name, Planned TPH, Previous VUsers, Think Time, Pacing)</label>
                         <input type="file" id="planningDataFile" accept=".csv">
                     </div>
                     <div style="margin:10px 0;">
@@ -22,16 +22,16 @@
 
         <table id="recommendations" style="width:100%; border-collapse:collapse; border:1px solid #ccc;">
             <tr style="background:#f5f5f5;">
-                <th style="padding:8px; border:1px solid #ccc; text-align:left;">Script Name</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Current TPH</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Target TPH</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">TPH Change %</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Current Think Time</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Suggested Think Time</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Current Pacing</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Suggested Pacing</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Current VUsers</th>
-                <th style="padding:8px; border:1px solid #ccc; text-align:right;">Recommended VUsers</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Script Name</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Current TPH</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Target TPH</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">TPH Change %</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Response Time Total</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Think Time Total</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Current Pacing</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Suggested Pacing</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Current VUsers</th>
+                <th style="padding:8px; border:1px solid #ccc; text-align:center;">Recommended VUsers</th>
             </tr>
         </table>
     </div>
@@ -46,39 +46,18 @@
             });
         }
 
-        function calculateWorkloadParameters(currentTph, targetTph, currentThinkTime, currentPacing, currentVUsers) {
+        function calculateWorkloadParameters(currentTph, targetTph, totalResponseTime, totalThinkTime, currentPacing, currentVUsers) {
             const tphChangePercent = ((targetTph - currentTph) / currentTph) * 100;
             
-            let recommendedVUsers = currentVUsers;
-            let suggestedThinkTime = currentThinkTime;
-            let suggestedPacing = currentPacing;
-
-            if (tphChangePercent !== 0) {
-                // 70% of change through VUsers
-                const vuserChangePercent = tphChangePercent * 0.7;
-                recommendedVUsers = Math.max(1, Math.ceil(currentVUsers * (1 + (vuserChangePercent / 100))));
-
-                // Remaining 30% split between pacing and think time
-                if (tphChangePercent > 0) {
-                    const timeReductionPercent = tphChangePercent * 0.3;
-                    
-                    if (currentPacing > 5) {
-                        suggestedPacing = Math.max(5, Math.ceil(currentPacing * (1 - (timeReductionPercent / 200))));
-                    }
-                    
-                    if (currentThinkTime > 1) {
-                        suggestedThinkTime = Math.max(1, Math.ceil(currentThinkTime * (1 - (timeReductionPercent / 200))));
-                    }
-                } else {
-                    const timeIncreasePercent = Math.abs(tphChangePercent * 0.3);
-                    suggestedPacing = Math.ceil(currentPacing * (1 + (timeIncreasePercent / 200)));
-                    suggestedThinkTime = Math.ceil(currentThinkTime * (1 + (timeIncreasePercent / 200)));
-                }
-            }
+            // Calculate VUsers using the formula: (Planned_TPH * (Response_Time + Think_Time)) / 3600
+            const recommendedVUsers = Math.ceil((targetTph * (totalResponseTime + totalThinkTime)) / 3600);
+            
+            // Calculate suggested pacing based on the new VUser count
+            let suggestedPacing = Math.ceil(3600 / (targetTph / recommendedVUsers));
+            suggestedPacing = Math.max(5, suggestedPacing); // Minimum 5s pacing
 
             return {
                 vusers: recommendedVUsers,
-                thinkTime: suggestedThinkTime,
                 pacing: suggestedPacing,
                 tphChangePercent: tphChangePercent
             };
@@ -105,10 +84,10 @@
                     const row = planningData[i];
                     const transactionName = row[0];
                     const scriptName = row[1];
-                    const plannedTph = parseInt(row[3]);
-                    const vusers = parseInt(row[4]);
-                    const thinkTime = parseFloat(row[5]);
-                    const pacing = parseInt(row[6]);
+                    const plannedTph = parseInt(row[2]);
+                    const vusers = parseInt(row[3]);
+                    const thinkTime = parseFloat(row[4]);
+                    const pacing = parseInt(row[5]);
 
                     transactionToScript[transactionName] = scriptName;
                     
@@ -116,13 +95,15 @@
                         scriptInfo[scriptName] = {
                             totalPlannedTph: 0,
                             vusers: vusers,
-                            thinkTime: thinkTime,
+                            totalThinkTime: 0,
                             pacing: pacing,
                             transactions: new Set(),
-                            totalPassCount: 0
+                            totalPassCount: 0,
+                            totalResponseTime: 0
                         };
                     }
                     scriptInfo[scriptName].totalPlannedTph += plannedTph;
+                    scriptInfo[scriptName].totalThinkTime += thinkTime;
                     scriptInfo[scriptName].transactions.add(transactionName);
                 }
 
@@ -130,11 +111,13 @@
                 for (let i = 1; i < lastResults.length; i++) {
                     const row = lastResults[i];
                     const transactionName = row[0];
+                    const responseTime = parseFloat(row[1]);
                     const passCount = parseInt(row[2]);
                     const scriptName = transactionToScript[transactionName];
                     
                     if (scriptName && scriptInfo[scriptName]) {
                         scriptInfo[scriptName].totalPassCount += passCount;
+                        scriptInfo[scriptName].totalResponseTime += responseTime;
                     }
                 }
 
@@ -147,27 +130,27 @@
                     const recommendation = calculateWorkloadParameters(
                         info.totalPassCount,
                         info.totalPlannedTph,
-                        info.thinkTime,
+                        info.totalResponseTime,
+                        info.totalThinkTime,
                         info.pacing,
                         info.vusers
                     );
 
                     const row = table.insertRow(-1);
                     
-                    // Define common cell style
-                    const cellStyle = "padding:8px; border:1px solid #ccc; text-align:right;";
-                    const firstCellStyle = "padding:8px; border:1px solid #ccc; text-align:left;";
+                    // Define common cell style for center alignment
+                    const cellStyle = "padding:8px; border:1px solid #ccc; text-align:center;";
                     
                     // Insert cells with inline styles
-                    row.insertCell(0).outerHTML = `<td style="${firstCellStyle}">${scriptName}</td>`;
+                    row.insertCell(0).outerHTML = `<td style="${cellStyle}">${scriptName}</td>`;
                     row.insertCell(1).outerHTML = `<td style="${cellStyle}">${info.totalPassCount.toFixed(0)}</td>`;
                     row.insertCell(2).outerHTML = `<td style="${cellStyle}">${info.totalPlannedTph}</td>`;
                     
                     const changeStyle = recommendation.tphChangePercent > 0 ? "color:#006644;" : "color:#bf2600;";
                     row.insertCell(3).outerHTML = `<td style="${cellStyle} ${changeStyle}">${recommendation.tphChangePercent.toFixed(1)}%</td>`;
                     
-                    row.insertCell(4).outerHTML = `<td style="${cellStyle}">${info.thinkTime.toFixed(1)}s</td>`;
-                    row.insertCell(5).outerHTML = `<td style="${cellStyle}">${recommendation.thinkTime.toFixed(1)}s</td>`;
+                    row.insertCell(4).outerHTML = `<td style="${cellStyle}">${info.totalResponseTime.toFixed(1)}s</td>`;
+                    row.insertCell(5).outerHTML = `<td style="${cellStyle}">${info.totalThinkTime.toFixed(1)}s</td>`;
                     row.insertCell(6).outerHTML = `<td style="${cellStyle}">${info.pacing.toFixed(1)}s</td>`;
                     row.insertCell(7).outerHTML = `<td style="${cellStyle}">${recommendation.pacing.toFixed(1)}s</td>`;
                     row.insertCell(8).outerHTML = `<td style="${cellStyle}">${info.vusers}</td>`;
