@@ -2,7 +2,6 @@
 <html>
 <head>
     <style>
-        /* Previous styles remain same */
         .input-section {
             margin: 10px 0;
         }
@@ -65,16 +64,15 @@
             <th>Current TPH</th>
             <th>Target TPH</th>
             <th>Response Time (avg)</th>
-            <th>Think Time (avg)</th>
+            <th>Think Time</th>
             <th>Pacing</th>
             <th>Current VUsers</th>
             <th>Recommended VUsers</th>
-            <th>Optimization Suggestions</th>
+            <th>Suggestions</th>
         </tr>
     </table>
 
     <script>
-        // Previous CSV processing functions remain same
         function processCSVFile(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -84,27 +82,57 @@
             });
         }
 
-        function calculateOptimizedParameters(data, targetVUsers) {
-            const avgResponseTime = data.totalResponseTime / data.transactionCount;
-            const avgThinkTime = data.totalThinkTime / data.transactionCount;
-            const currentIterationTime = avgResponseTime + avgThinkTime + data.pacing;
+        function calculateRealisticParameters(data, avgResponseTime) {
+            // Calculate TPH per user based on current metrics
+            const currentTphPerUser = data.currentTph / data.currentVUsers;
             
-            // Calculate required iteration time for target VUsers
-            const requiredIterationTime = (3600 * targetVUsers) / data.targetTph;
+            // Calculate iteration time based on actual measurements
+            const measuredIterationTime = 3600 / currentTphPerUser;
             
-            // Calculate adjustable time (think time + pacing)
-            const adjustableTime = requiredIterationTime - avgResponseTime;
+            // Calculate base VUsers needed for target TPH
+            let recommendedVUsers = Math.ceil((data.targetTph * measuredIterationTime) / 3600);
             
-            // Propose new think time and pacing that sum to adjustableTime
-            // Try to maintain the original ratio between think time and pacing
-            const originalRatio = avgThinkTime / data.pacing;
-            const newThinkTime = Math.max(1, (adjustableTime * originalRatio) / (1 + originalRatio));
-            const newPacing = Math.max(1, adjustableTime - newThinkTime);
-            
+            // If VUser change is more than 30%, optimize pacing first
+            const vuserChange = ((recommendedVUsers - data.currentVUsers) / data.currentVUsers) * 100;
+            let suggestions = [];
+            let adjustedPacing = data.pacing;
+            let adjustedThinkTime = data.totalThinkTime / data.transactionCount;
+
+            if (Math.abs(vuserChange) > 30) {
+                if (vuserChange > 0) {
+                    // If we need more VUsers, try reducing pacing first
+                    const minPacing = Math.max(1, data.pacing / 2); // Don't reduce pacing below 1 second
+                    adjustedPacing = Math.max(minPacing, data.pacing * 0.7);
+                    
+                    // Recalculate VUsers with new pacing
+                    const newIterationTime = avgResponseTime + adjustedThinkTime + adjustedPacing;
+                    const iterationsPerHour = 3600 / newIterationTime;
+                    recommendedVUsers = Math.ceil(data.targetTph / iterationsPerHour);
+                    
+                    suggestions.push(`Consider reducing pacing to ${adjustedPacing.toFixed(1)}s to optimize VUser count`);
+                } else {
+                    // If we need fewer VUsers, consider increasing pacing
+                    adjustedPacing = Math.min(60, data.pacing * 1.3); // Don't increase pacing beyond 60 seconds
+                    
+                    // Recalculate VUsers with new pacing
+                    const newIterationTime = avgResponseTime + adjustedThinkTime + adjustedPacing;
+                    const iterationsPerHour = 3600 / newIterationTime;
+                    recommendedVUsers = Math.ceil(data.targetTph / iterationsPerHour);
+                    
+                    suggestions.push(`Consider increasing pacing to ${adjustedPacing.toFixed(1)}s to optimize VUser count`);
+                }
+            }
+
+            // Add performance warnings
+            if (avgResponseTime > data.transactions[0].sla) {
+                suggestions.push(`High response time detected. Consider performance optimization before adding more VUsers`);
+            }
+
             return {
-                thinkTime: newThinkTime,
-                pacing: newPacing,
-                vusers: targetVUsers
+                vusers: recommendedVUsers,
+                pacing: adjustedPacing,
+                thinkTime: adjustedThinkTime,
+                suggestions: suggestions
             };
         }
 
@@ -118,7 +146,6 @@
             }
 
             try {
-                // Previous data processing remains same
                 const lastResults = await processCSVFile(lastResultsFile);
                 const planningData = await processCSVFile(planningDataFile);
 
@@ -144,7 +171,6 @@
                     recommendations.deleteRow(1);
                 }
 
-                // Process script data
                 const scriptData = {};
                 planningDataObj.forEach(plan => {
                     if (!scriptData[plan.scriptName]) {
@@ -178,53 +204,27 @@
 
                 Object.entries(scriptData).forEach(([scriptName, data]) => {
                     const row = recommendations.insertRow(-1);
-                    
                     const avgResponseTime = data.totalResponseTime / data.transactionCount;
-                    const avgThinkTime = data.totalThinkTime / data.transactionCount;
-                    const iterationTime = avgResponseTime + avgThinkTime + data.pacing;
-                    const iterationsPerHour = 3600 / iterationTime;
-                    const recommendedVUsers = Math.ceil(data.targetTph / iterationsPerHour);
                     
-                    // Calculate percentage change in VUsers
-                    const vuserChange = ((recommendedVUsers - data.currentVUsers) / data.currentVUsers) * 100;
-                    
-                    let finalRecommendation;
-                    let suggestions = [];
+                    const recommendation = calculateRealisticParameters(data, avgResponseTime);
 
-                    // If VUser change is more than 30%, calculate optimized parameters
-                    if (Math.abs(vuserChange) > 30) {
-                        const targetVUsers = Math.ceil(data.currentVUsers * (1 + (vuserChange > 0 ? 0.3 : -0.3)));
-                        const optimized = calculateOptimizedParameters(data, targetVUsers);
-                        
-                        suggestions.push(`Consider these adjustments to achieve target TPH with ${targetVUsers} VUsers:`);
-                        if (Math.abs(optimized.thinkTime - avgThinkTime) > 0.1) {
-                            suggestions.push(`Adjust think time to ${optimized.thinkTime.toFixed(1)}s (current: ${avgThinkTime.toFixed(1)}s)`);
-                        }
-                        if (Math.abs(optimized.pacing - data.pacing) > 0.1) {
-                            suggestions.push(`Adjust pacing to ${optimized.pacing.toFixed(1)}s (current: ${data.pacing}s)`);
-                        }
-                        finalRecommendation = optimized.vusers;
-                    } else {
-                        finalRecommendation = recommendedVUsers;
-                    }
-                    
                     // Populate table cells
                     row.insertCell(0).textContent = scriptName;
                     row.insertCell(1).textContent = data.currentTph.toFixed(2);
                     row.insertCell(2).textContent = data.targetTph;
                     row.insertCell(3).textContent = avgResponseTime.toFixed(2) + 's';
-                    row.insertCell(4).textContent = avgThinkTime.toFixed(2) + 's';
-                    row.insertCell(5).textContent = data.pacing + 's';
+                    row.insertCell(4).textContent = recommendation.thinkTime.toFixed(1) + 's';
+                    row.insertCell(5).textContent = recommendation.pacing.toFixed(1) + 's';
                     row.insertCell(6).textContent = data.currentVUsers;
-                    row.insertCell(7).textContent = finalRecommendation;
-                    row.insertCell(8).textContent = suggestions.join('\n');
+                    row.insertCell(7).textContent = recommendation.vusers;
+                    row.insertCell(8).textContent = recommendation.suggestions.join('\n');
 
                     // Apply styling
                     [1,2,3,4,5,6,7].forEach(index => {
                         row.cells[index].className = 'numeric';
                     });
                     
-                    if (suggestions.length > 0) {
+                    if (recommendation.suggestions.length > 0) {
                         row.cells[8].className = 'suggestion';
                     }
                 });
