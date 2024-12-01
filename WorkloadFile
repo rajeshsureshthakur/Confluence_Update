@@ -7,8 +7,12 @@
             margin: 20px;
             color: #172B4D;
         }
-        .input-section { margin: 10px 0; }
-        .calculate-btn { margin: 10px 0; }
+        .input-section { 
+            margin: 10px 0; 
+        }
+        .calculate-btn { 
+            margin: 10px 0; 
+        }
         table {
             border-collapse: collapse;
             width: 100%;
@@ -21,19 +25,34 @@
             border: 1px solid #DFE1E6;
             padding: 7px 10px;
             font-size: 14px;
+            position: sticky;
+            top: 0;
+            background: #F4F5F7;
         }
         td {
             border: 1px solid #DFE1E6;
             padding: 7px 10px;
             font-size: 14px;
         }
-        tr:hover { background-color: #F8F9FA; }
+        tr:hover { 
+            background-color: #F8F9FA; 
+        }
         .numeric {
             text-align: right;
             font-family: monospace;
         }
-        .warning { color: #DE350B; }
-        .suggestion { color: #0747A6; }
+        .warning { 
+            color: #DE350B; 
+        }
+        .suggestion { 
+            color: #0747A6; 
+        }
+        .increase { 
+            color: #00875A; 
+        }
+        .decrease { 
+            color: #DE350B; 
+        }
         button {
             padding: 8px 16px;
             background-color: #0052CC;
@@ -44,6 +63,10 @@
         }
         button:hover {
             background-color: #0065FF;
+        }
+        .table-container {
+            max-height: 600px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -62,22 +85,25 @@
         <button onclick="calculateVUsers()">Calculate VUsers</button>
     </div>
 
-    <table id="recommendations">
-        <tr>
-            <th>Script Name</th>
-            <th>Current TPH</th>
-            <th>Target TPH</th>
-            <th>Response Time (avg)</th>
-            <th>Current Think Time</th>
-            <th>Suggested Think Time</th>
-            <th>Current Pacing</th>
-            <th>Suggested Pacing</th>
-            <th>Current VUsers</th>
-            <th>Recommended VUsers</th>
-            <th>Current TPH/User</th>
-            <th>Notes</th>
-        </tr>
-    </table>
+    <div class="table-container">
+        <table id="recommendations">
+            <tr>
+                <th>Script Name</th>
+                <th>Current TPH</th>
+                <th>Target TPH</th>
+                <th>TPH Change %</th>
+                <th>Response Time (avg)</th>
+                <th>Current Think Time</th>
+                <th>Suggested Think Time</th>
+                <th>Current Pacing</th>
+                <th>Suggested Pacing</th>
+                <th>Current VUsers</th>
+                <th>Recommended VUsers</th>
+                <th>Current TPH/User</th>
+                <th>Notes</th>
+            </tr>
+        </table>
+    </div>
 
     <script>
         function processCSVFile(file) {
@@ -92,47 +118,58 @@
         function calculateWorkloadParameters(currentTph, targetTph, responseTime, currentThinkTime, currentPacing, currentVUsers) {
             let suggestions = [];
             
+            // Calculate TPH change percentage
+            const tphChangePercent = ((targetTph - currentTph) / currentTph) * 100;
+            
             // Calculate current metrics
             const currentCycleTime = responseTime + currentThinkTime + currentPacing;
             const currentTphPerUser = currentTph / currentVUsers;
-            const currentIterationsPerUser = 3600 / currentCycleTime;
 
-            // Calculate required throughput increase factor
-            const throughputFactor = targetTph / currentTph;
-
-            // Initial VUser calculation based on throughput factor
-            let recommendedVUsers = Math.ceil(currentVUsers * throughputFactor);
+            let recommendedVUsers = currentVUsers;
             let suggestedThinkTime = currentThinkTime;
             let suggestedPacing = currentPacing;
 
-            // If VUser increase is too high, try optimizing cycle time
-            if (recommendedVUsers > currentVUsers * 2) {
-                // Try reducing pacing first
-                if (currentPacing > 5) {
-                    suggestedPacing = Math.max(5, Math.floor(currentPacing / 1.5));
-                    suggestions.push(`Consider reducing pacing from ${currentPacing}s to ${suggestedPacing}s`);
-                }
-                
-                // Then adjust think time if needed
-                if (currentThinkTime > 2) {
-                    suggestedThinkTime = Math.max(1, Math.floor(currentThinkTime / 1.5));
-                    suggestions.push(`Consider reducing think time from ${currentThinkTime}s to ${suggestedThinkTime}s`);
-                }
+            if (tphChangePercent !== 0) {
+                // 70% of change through VUsers
+                const vuserChangePercent = tphChangePercent * 0.7;
+                recommendedVUsers = Math.max(1, Math.ceil(currentVUsers * (1 + (vuserChangePercent / 100))));
 
-                // Recalculate VUsers with new timings
-                const newCycleTime = responseTime + suggestedThinkTime + suggestedPacing;
-                const newIterationsPerUser = 3600 / newCycleTime;
-                recommendedVUsers = Math.ceil(targetTph / newIterationsPerUser);
+                // Remaining 30% through pacing and think time adjustments
+                if (tphChangePercent > 0) {
+                    // For TPH increase: reduce times
+                    const timeReductionPercent = tphChangePercent * 0.3;
+                    
+                    // Split time reduction between pacing and think time
+                    if (currentPacing > 5) {
+                        suggestedPacing = Math.max(5, Math.ceil(currentPacing * (1 - (timeReductionPercent / 200))));
+                    }
+                    
+                    if (currentThinkTime > 1) {
+                        suggestedThinkTime = Math.max(1, Math.ceil(currentThinkTime * (1 - (timeReductionPercent / 200))));
+                    }
+                } else {
+                    // For TPH decrease: increase times proportionally
+                    const timeIncreasePercent = Math.abs(tphChangePercent * 0.3);
+                    
+                    suggestedPacing = Math.ceil(currentPacing * (1 + (timeIncreasePercent / 200)));
+                    suggestedThinkTime = Math.ceil(currentThinkTime * (1 + (timeIncreasePercent / 200)));
+                }
             }
 
-            // Add relevant suggestions
+            // Add suggestions
+            if (Math.abs(tphChangePercent) > 0) {
+                suggestions.push(`${Math.abs(tphChangePercent).toFixed(1)}% ${tphChangePercent > 0 ? 'increase' : 'decrease'} in TPH required`);
+                suggestions.push(`70% adjustment via VUsers (${currentVUsers} → ${recommendedVUsers})`);
+                if (suggestedPacing !== currentPacing) {
+                    suggestions.push(`15% adjustment via pacing (${currentPacing}s → ${suggestedPacing}s)`);
+                }
+                if (suggestedThinkTime !== currentThinkTime) {
+                    suggestions.push(`15% adjustment via think time (${currentThinkTime}s → ${suggestedThinkTime}s)`);
+                }
+            }
+
             if (responseTime > 2) {
                 suggestions.push(`High response time (${responseTime.toFixed(2)}s) may limit throughput`);
-            }
-
-            const vuserChange = ((recommendedVUsers - currentVUsers) / currentVUsers) * 100;
-            if (Math.abs(vuserChange) > 50) {
-                suggestions.push(`Large VUser change (${vuserChange.toFixed(0)}%) - consider gradual scaling`);
             }
 
             return {
@@ -140,6 +177,7 @@
                 thinkTime: suggestedThinkTime,
                 pacing: suggestedPacing,
                 tphPerUser: currentTphPerUser,
+                tphChangePercent: tphChangePercent,
                 suggestions: suggestions
             };
         }
@@ -229,22 +267,28 @@
                     row.insertCell(0).textContent = scriptName;
                     row.insertCell(1).textContent = info.totalPassCount.toFixed(0);
                     row.insertCell(2).textContent = info.totalPlannedTph;
-                    row.insertCell(3).textContent = avgResponseTime.toFixed(2) + 's';
-                    row.insertCell(4).textContent = info.thinkTime.toFixed(1) + 's';
-                    row.insertCell(5).textContent = recommendation.thinkTime.toFixed(1) + 's';
-                    row.insertCell(6).textContent = info.pacing.toFixed(1) + 's';
-                    row.insertCell(7).textContent = recommendation.pacing.toFixed(1) + 's';
-                    row.insertCell(8).textContent = info.vusers;
-                    row.insertCell(9).textContent = recommendation.vusers;
-                    row.insertCell(10).textContent = recommendation.tphPerUser.toFixed(2);
-                    row.insertCell(11).textContent = recommendation.suggestions.join('\n');
+                    
+                    // Add TPH change column with color coding
+                    const changeCell = row.insertCell(3);
+                    changeCell.textContent = recommendation.tphChangePercent.toFixed(1) + '%';
+                    changeCell.className = `numeric ${recommendation.tphChangePercent > 0 ? 'increase' : 'decrease'}`;
+                    
+                    row.insertCell(4).textContent = avgResponseTime.toFixed(2) + 's';
+                    row.insertCell(5).textContent = info.thinkTime.toFixed(1) + 's';
+                    row.insertCell(6).textContent = recommendation.thinkTime.toFixed(1) + 's';
+                    row.insertCell(7).textContent = info.pacing.toFixed(1) + 's';
+                    row.insertCell(8).textContent = recommendation.pacing.toFixed(1) + 's';
+                    row.insertCell(9).textContent = info.vusers;
+                    row.insertCell(10).textContent = recommendation.vusers;
+                    row.insertCell(11).textContent = recommendation.tphPerUser.toFixed(2);
+                    row.insertCell(12).textContent = recommendation.suggestions.join('\n');
 
-                    [1,2,3,4,5,6,7,8,9,10].forEach(index => {
+                    [1,2,3,4,5,6,7,8,9,10,11].forEach(index => {
                         row.cells[index].className = 'numeric';
                     });
                     
                     if (recommendation.suggestions.length > 0) {
-                        row.cells[11].className = 'suggestion';
+                        row.cells[12].className = 'suggestion';
                     }
                 });
             } catch (error) {
