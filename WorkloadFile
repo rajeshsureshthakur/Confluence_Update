@@ -1,16 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <!-- Previous styles remain same -->
     <style>
-        /* Previous styles */
-        .input-section { margin: 10px 0; }
-        .calculate-btn { margin: 10px 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 20px;
+            color: #172B4D;
+        }
+        .input-section {
+            margin: 10px 0;
+        }
+        .calculate-btn {
+            margin: 10px 0;
+        }
         table {
             border-collapse: collapse;
             width: 100%;
             margin: 10px 0;
-            color: #172B4D;
         }
         th {
             background-color: #F4F5F7;
@@ -25,17 +31,33 @@
             padding: 7px 10px;
             font-size: 14px;
         }
-        tr:hover { background-color: #F8F9FA; }
+        tr:hover {
+            background-color: #F8F9FA;
+        }
         .numeric {
             text-align: right;
             font-family: monospace;
         }
-        .warning { color: #DE350B; }
-        .suggestion { color: #0747A6; }
+        .warning {
+            color: #DE350B;
+        }
+        .suggestion {
+            color: #0747A6;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #0052CC;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0065FF;
+        }
     </style>
 </head>
 <body>
-    <!-- Previous HTML structure remains same -->
     <div class="input-section">
         <label>Last Test Results CSV (Transaction Name, Response Time, Pass Count, Fail Count)</label><br>
         <input type="file" id="lastResultsFile" accept=".csv">
@@ -66,7 +88,6 @@
     </table>
 
     <script>
-        // Previous helper functions remain same
         function processCSVFile(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -115,12 +136,12 @@
                     }
                 }
 
-                if (avgResponseTime > 2) {
-                    suggestions.push(`High response time (${avgResponseTime.toFixed(2)}s) may limit throughput`);
-                }
-
                 if (data.targetTph > data.currentTph * 2) {
                     suggestions.push(`Large TPH increase (${data.currentTph.toFixed(1)} → ${data.targetTph}) - consider gradual scaling`);
+                }
+
+                if (avgResponseTime > 2) {
+                    suggestions.push(`High response time (${avgResponseTime.toFixed(2)}s) may limit throughput`);
                 }
 
                 return {
@@ -155,58 +176,75 @@
                 const lastResults = await processCSVFile(lastResultsFile);
                 const planningData = await processCSVFile(planningDataFile);
 
-                // First, create a mapping of transactions to scripts from planning data
+                // Create transaction to script mapping
                 const transactionToScript = {};
                 const scriptInfo = {};
-                
-                planningData.forEach(row => {
-                    const [transactionName, scriptName, , plannedTph, vusers, thinkTime, pacing] = row;
+
+                // Process planning data (Sheet 2)
+                for (let i = 1; i < planningData.length; i++) {  // Skip header
+                    const row = planningData[i];
+                    const transactionName = row[0];  // Column A
+                    const scriptName = row[1];       // Column B
+                    const plannedTph = parseInt(row[3]);
+                    const vusers = parseInt(row[4]);
+                    const thinkTime = parseFloat(row[5]);
+                    const pacing = parseInt(row[6]);
+
                     transactionToScript[transactionName] = scriptName;
                     
                     if (!scriptInfo[scriptName]) {
                         scriptInfo[scriptName] = {
                             totalPlannedTph: 0,
-                            vusers: parseInt(vusers),
-                            pacing: parseInt(pacing),
-                            thinkTime: parseFloat(thinkTime),
-                            transactions: new Set()
+                            vusers: vusers,
+                            pacing: pacing,
+                            thinkTime: thinkTime,
+                            transactions: new Set(),
+                            totalPassCount: 0
                         };
                     }
-                    scriptInfo[scriptName].totalPlannedTph += parseInt(plannedTph);
+                    scriptInfo[scriptName].totalPlannedTph += plannedTph;
                     scriptInfo[scriptName].transactions.add(transactionName);
-                });
+                }
 
-                // Calculate current TPH for each script based on actual results
+                // Process last results (Sheet 1) to get pass counts
+                for (let i = 1; i < lastResults.length; i++) {  // Skip header
+                    const row = lastResults[i];
+                    const transactionName = row[0];  // Column A
+                    const passCount = parseInt(row[2]);  // Column C
+                    const scriptName = transactionToScript[transactionName];
+                    
+                    if (scriptName && scriptInfo[scriptName]) {
+                        scriptInfo[scriptName].totalPassCount += passCount;
+                    }
+                }
+
+                // Calculate TPH and prepare data for each script
                 const scriptData = {};
                 Object.entries(scriptInfo).forEach(([scriptName, info]) => {
                     scriptData[scriptName] = {
-                        currentTph: 0,
+                        currentTph: info.totalPassCount / 24,  // Convert daily pass count to hourly
                         targetTph: info.totalPlannedTph,
                         currentVUsers: info.vusers,
                         pacing: info.pacing,
                         totalResponseTime: 0,
-                        totalThinkTime: 0,
-                        transactionCount: 0,
-                        transactions: new Set()
+                        totalThinkTime: info.thinkTime * info.transactions.size,
+                        transactionCount: info.transactions.size
                     };
                 });
 
-                // Process last results and calculate TPH
-                lastResults.forEach(row => {
-                    const [transactionName, responseTime, passCount] = row;
+                // Process response times
+                for (let i = 1; i < lastResults.length; i++) {  // Skip header
+                    const row = lastResults[i];
+                    const transactionName = row[0];
+                    const responseTime = parseFloat(row[1]);
                     const scriptName = transactionToScript[transactionName];
                     
                     if (scriptName && scriptData[scriptName]) {
-                        const passes = parseInt(passCount);
-                        // Add to TPH (divide by 24 to convert daily count to hourly rate)
-                        scriptData[scriptName].currentTph += passes / 24;
-                        scriptData[scriptName].totalResponseTime += parseFloat(responseTime);
-                        scriptData[scriptName].totalThinkTime += scriptInfo[scriptName].thinkTime;
-                        scriptData[scriptName].transactionCount++;
-                        scriptData[scriptName].transactions.add(transactionName);
+                        scriptData[scriptName].totalResponseTime += responseTime;
                     }
-                });
+                }
 
+                // Generate recommendations
                 const recommendations = document.getElementById('recommendations');
                 while (recommendations.rows.length > 1) {
                     recommendations.deleteRow(1);
