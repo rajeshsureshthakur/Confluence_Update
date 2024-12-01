@@ -2,6 +2,7 @@
 <html>
 <head>
     <style>
+        /* Previous styles remain same */
         .input-section {
             margin: 10px 0;
         }
@@ -11,30 +12,47 @@
         table {
             border-collapse: collapse;
             width: 100%;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
+            margin: 10px 0;
+            color: #172B4D;
         }
         th {
-            background-color: #f5f5f5;
+            background-color: #F4F5F7;
+            font-weight: bold;
+            text-align: left;
+            border: 1px solid #DFE1E6;
+            padding: 7px 10px;
+            font-size: 14px;
+        }
+        td {
+            border: 1px solid #DFE1E6;
+            padding: 7px 10px;
+            vertical-align: top;
+            font-size: 14px;
+        }
+        tr:hover {
+            background-color: #F8F9FA;
+        }
+        .numeric {
+            text-align: right;
+            font-family: monospace;
+        }
+        .warning {
+            color: #DE350B;
+        }
+        .suggestion {
+            color: #0747A6;
         }
     </style>
 </head>
 <body>
     <div class="input-section">
-        <div>
-            <label>Last Test Results CSV (Transaction Name, Response Time, Pass Count, Fail Count)</label><br>
-            <input type="file" id="lastResultsFile" accept=".csv">
-        </div>
+        <label>Last Test Results CSV (Transaction Name, Response Time, Pass Count, Fail Count)</label><br>
+        <input type="file" id="lastResultsFile" accept=".csv">
     </div>
 
     <div class="input-section">
-        <div>
-            <label>Test Planning Data CSV (Transaction Name, Script Name, SLA, Planned TPH, Previous VUsers)</label><br>
-            <input type="file" id="planningDataFile" accept=".csv">
-        </div>
+        <label>Test Planning Data CSV (Transaction Name, Script Name, SLA, Planned TPH, Previous VUsers, Think Time, Pacing)</label><br>
+        <input type="file" id="planningDataFile" accept=".csv">
     </div>
 
     <div class="calculate-btn">
@@ -46,13 +64,17 @@
             <th>Script Name</th>
             <th>Current TPH</th>
             <th>Target TPH</th>
+            <th>Response Time (avg)</th>
+            <th>Think Time (avg)</th>
+            <th>Pacing</th>
             <th>Current VUsers</th>
             <th>Recommended VUsers</th>
-            <th>Notes</th>
+            <th>Optimization Suggestions</th>
         </tr>
     </table>
 
     <script>
+        // Previous CSV processing functions remain same
         function processCSVFile(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -60,6 +82,30 @@
                 reader.onerror = reject;
                 reader.readAsText(file);
             });
+        }
+
+        function calculateOptimizedParameters(data, targetVUsers) {
+            const avgResponseTime = data.totalResponseTime / data.transactionCount;
+            const avgThinkTime = data.totalThinkTime / data.transactionCount;
+            const currentIterationTime = avgResponseTime + avgThinkTime + data.pacing;
+            
+            // Calculate required iteration time for target VUsers
+            const requiredIterationTime = (3600 * targetVUsers) / data.targetTph;
+            
+            // Calculate adjustable time (think time + pacing)
+            const adjustableTime = requiredIterationTime - avgResponseTime;
+            
+            // Propose new think time and pacing that sum to adjustableTime
+            // Try to maintain the original ratio between think time and pacing
+            const originalRatio = avgThinkTime / data.pacing;
+            const newThinkTime = Math.max(1, (adjustableTime * originalRatio) / (1 + originalRatio));
+            const newPacing = Math.max(1, adjustableTime - newThinkTime);
+            
+            return {
+                thinkTime: newThinkTime,
+                pacing: newPacing,
+                vusers: targetVUsers
+            };
         }
 
         async function calculateVUsers() {
@@ -72,6 +118,7 @@
             }
 
             try {
+                // Previous data processing remains same
                 const lastResults = await processCSVFile(lastResultsFile);
                 const planningData = await processCSVFile(planningDataFile);
 
@@ -87,7 +134,9 @@
                     scriptName: row[1],
                     sla: parseFloat(row[2]),
                     plannedTph: parseInt(row[3]),
-                    previousVUsers: parseInt(row[4])
+                    previousVUsers: parseInt(row[4]),
+                    thinkTime: parseFloat(row[5]),
+                    pacing: parseInt(row[6])
                 }));
 
                 const recommendations = document.getElementById('recommendations');
@@ -95,6 +144,7 @@
                     recommendations.deleteRow(1);
                 }
 
+                // Process script data
                 const scriptData = {};
                 planningDataObj.forEach(plan => {
                     if (!scriptData[plan.scriptName]) {
@@ -102,7 +152,11 @@
                             currentTph: 0,
                             targetTph: plan.plannedTph,
                             currentVUsers: plan.previousVUsers,
-                            transactions: []
+                            pacing: plan.pacing,
+                            transactions: [],
+                            totalResponseTime: 0,
+                            totalThinkTime: 0,
+                            transactionCount: 0
                         };
                     }
                     
@@ -110,10 +164,14 @@
                     if (lastResult) {
                         const tph = (lastResult.passCount + lastResult.failCount) / 24;
                         scriptData[plan.scriptName].currentTph += tph;
+                        scriptData[plan.scriptName].totalResponseTime += lastResult.responseTime;
+                        scriptData[plan.scriptName].totalThinkTime += plan.thinkTime;
+                        scriptData[plan.scriptName].transactionCount++;
                         scriptData[plan.scriptName].transactions.push({
                             name: plan.transactionName,
                             sla: plan.sla,
-                            responseTime: lastResult.responseTime
+                            responseTime: lastResult.responseTime,
+                            thinkTime: plan.thinkTime
                         });
                     }
                 });
@@ -121,29 +179,57 @@
                 Object.entries(scriptData).forEach(([scriptName, data]) => {
                     const row = recommendations.insertRow(-1);
                     
+                    const avgResponseTime = data.totalResponseTime / data.transactionCount;
+                    const avgThinkTime = data.totalThinkTime / data.transactionCount;
+                    const iterationTime = avgResponseTime + avgThinkTime + data.pacing;
+                    const iterationsPerHour = 3600 / iterationTime;
+                    const recommendedVUsers = Math.ceil(data.targetTph / iterationsPerHour);
+                    
+                    // Calculate percentage change in VUsers
+                    const vuserChange = ((recommendedVUsers - data.currentVUsers) / data.currentVUsers) * 100;
+                    
+                    let finalRecommendation;
+                    let suggestions = [];
+
+                    // If VUser change is more than 30%, calculate optimized parameters
+                    if (Math.abs(vuserChange) > 30) {
+                        const targetVUsers = Math.ceil(data.currentVUsers * (1 + (vuserChange > 0 ? 0.3 : -0.3)));
+                        const optimized = calculateOptimizedParameters(data, targetVUsers);
+                        
+                        suggestions.push(`Consider these adjustments to achieve target TPH with ${targetVUsers} VUsers:`);
+                        if (Math.abs(optimized.thinkTime - avgThinkTime) > 0.1) {
+                            suggestions.push(`Adjust think time to ${optimized.thinkTime.toFixed(1)}s (current: ${avgThinkTime.toFixed(1)}s)`);
+                        }
+                        if (Math.abs(optimized.pacing - data.pacing) > 0.1) {
+                            suggestions.push(`Adjust pacing to ${optimized.pacing.toFixed(1)}s (current: ${data.pacing}s)`);
+                        }
+                        finalRecommendation = optimized.vusers;
+                    } else {
+                        finalRecommendation = recommendedVUsers;
+                    }
+                    
+                    // Populate table cells
                     row.insertCell(0).textContent = scriptName;
                     row.insertCell(1).textContent = data.currentTph.toFixed(2);
                     row.insertCell(2).textContent = data.targetTph;
-                    row.insertCell(3).textContent = data.currentVUsers;
-                    
-                    let recommendedVUsers = Math.ceil((data.targetTph / data.currentTph) * data.currentVUsers);
-                    row.insertCell(4).textContent = recommendedVUsers;
-                    
-                    let notes = [];
-                    data.transactions.forEach(t => {
-                        if (t.responseTime > t.sla) {
-                            notes.push(`${t.name} exceeds SLA`);
-                        }
+                    row.insertCell(3).textContent = avgResponseTime.toFixed(2) + 's';
+                    row.insertCell(4).textContent = avgThinkTime.toFixed(2) + 's';
+                    row.insertCell(5).textContent = data.pacing + 's';
+                    row.insertCell(6).textContent = data.currentVUsers;
+                    row.insertCell(7).textContent = finalRecommendation;
+                    row.insertCell(8).textContent = suggestions.join('\n');
+
+                    // Apply styling
+                    [1,2,3,4,5,6,7].forEach(index => {
+                        row.cells[index].className = 'numeric';
                     });
                     
-                    if (recommendedVUsers > data.currentVUsers * 1.5) {
-                        notes.push(`Large VUser increase`);
+                    if (suggestions.length > 0) {
+                        row.cells[8].className = 'suggestion';
                     }
-                    
-                    row.insertCell(5).textContent = notes.join("; ");
                 });
             } catch (error) {
-                alert('Error processing files');
+                alert('Error processing files: ' + error.message);
             }
         }
     </script>
