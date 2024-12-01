@@ -2,13 +2,9 @@
 <html>
 <head>
     <style>
-        /* Previous styles remain same */
-        .input-section {
-            margin: 10px 0;
-        }
-        .calculate-btn {
-            margin: 10px 0;
-        }
+        /* Previous styles */
+        .input-section { margin: 10px 0; }
+        .calculate-btn { margin: 10px 0; }
         table {
             border-collapse: collapse;
             width: 100%;
@@ -26,22 +22,15 @@
         td {
             border: 1px solid #DFE1E6;
             padding: 7px 10px;
-            vertical-align: top;
             font-size: 14px;
         }
-        tr:hover {
-            background-color: #F8F9FA;
-        }
+        tr:hover { background-color: #F8F9FA; }
         .numeric {
             text-align: right;
             font-family: monospace;
         }
-        .warning {
-            color: #DE350B;
-        }
-        .suggestion {
-            color: #0747A6;
-        }
+        .warning { color: #DE350B; }
+        .suggestion { color: #0747A6; }
     </style>
 </head>
 <body>
@@ -69,6 +58,7 @@
             <th>Pacing</th>
             <th>Current VUsers</th>
             <th>Recommended VUsers</th>
+            <th>Current TPH/User</th>
             <th>Suggestions</th>
         </tr>
     </table>
@@ -83,75 +73,86 @@
             });
         }
 
-        function calculateRealisticParameters(data, avgResponseTime) {
+        function calculateWorkload(data, avgResponseTime) {
             try {
-                // Validations
-                if (!data || !data.currentTph || !data.currentVUsers) {
-                    throw new Error('Invalid data for calculations');
-                }
-
-                // Calculate TPH per user based on current metrics
+                // Calculate current metrics
+                const currentThinkTime = data.totalThinkTime / data.transactionCount;
+                const currentIterationTime = avgResponseTime + currentThinkTime + data.pacing;
+                const iterationsPerHourPerUser = 3600 / currentIterationTime;
                 const currentTphPerUser = data.currentTph / data.currentVUsers;
-                
-                // Calculate iteration time based on actual measurements
-                const measuredIterationTime = 3600 / currentTphPerUser;
-                
-                // Calculate base VUsers needed for target TPH
-                let recommendedVUsers = Math.ceil((data.targetTph * measuredIterationTime) / 3600);
-                
-                const vuserChange = ((recommendedVUsers - data.currentVUsers) / data.currentVUsers) * 100;
-                let suggestions = [];
-                let adjustedPacing = data.pacing;
-                let adjustedThinkTime = data.totalThinkTime / data.transactionCount;
 
+                // Validate the calculated TPH per user matches actual metrics
+                const theoreticalTphPerUser = iterationsPerHourPerUser;
+                const actualTphPerUser = currentTphPerUser;
+
+                // Calculate initial VUser estimate
+                let recommendedVUsers = Math.ceil(data.targetTph / actualTphPerUser);
+                let adjustedPacing = data.pacing;
+                let adjustedThinkTime = currentThinkTime;
+                let suggestions = [];
+
+                // If VUser change is too high, look at adjusting pacing/think time
+                const vuserChange = ((recommendedVUsers - data.currentVUsers) / data.currentVUsers) * 100;
+                
                 if (Math.abs(vuserChange) > 30) {
-                    if (vuserChange > 0) {
-                        const minPacing = Math.max(1, data.pacing / 2);
-                        adjustedPacing = Math.max(minPacing, data.pacing * 0.7);
+                    // Calculate how much we need to adjust iteration time
+                    const targetTphPerUser = data.targetTph / (data.currentVUsers * 1.3); // Limit VUser increase to 30%
+                    const requiredIterationTime = 3600 / targetTphPerUser;
+                    const currentTime = avgResponseTime + currentThinkTime + data.pacing;
+                    const timeReduction = currentTime - requiredIterationTime;
+
+                    if (timeReduction > 0) {
+                        // Try adjusting pacing first within reasonable limits
+                        if (data.pacing > 5) {  // Don't reduce pacing below 5 seconds
+                            const newPacing = Math.max(5, data.pacing - timeReduction/2);
+                            adjustedPacing = newPacing;
+                            suggestions.push(`Consider reducing pacing from ${data.pacing}s to ${newPacing.toFixed(1)}s`);
+                        }
                         
+                        // Then look at think time if needed
+                        if (currentThinkTime > 2) {  // Don't reduce think time below 2 seconds
+                            const newThinkTime = Math.max(2, currentThinkTime - timeReduction/2);
+                            adjustedThinkTime = newThinkTime;
+                            suggestions.push(`Consider adjusting think time from ${currentThinkTime.toFixed(1)}s to ${newThinkTime.toFixed(1)}s`);
+                        }
+
+                        // Recalculate VUsers with new timings
                         const newIterationTime = avgResponseTime + adjustedThinkTime + adjustedPacing;
-                        const iterationsPerHour = 3600 / newIterationTime;
-                        recommendedVUsers = Math.ceil(data.targetTph / iterationsPerHour);
-                        
-                        suggestions.push(`Consider reducing pacing to ${adjustedPacing.toFixed(1)}s to optimize VUser count`);
-                    } else {
-                        adjustedPacing = Math.min(60, data.pacing * 1.3);
-                        
-                        const newIterationTime = avgResponseTime + adjustedThinkTime + adjustedPacing;
-                        const iterationsPerHour = 3600 / newIterationTime;
-                        recommendedVUsers = Math.ceil(data.targetTph / iterationsPerHour);
-                        
-                        suggestions.push(`Consider increasing pacing to ${adjustedPacing.toFixed(1)}s to optimize VUser count`);
+                        const newIterationsPerHour = 3600 / newIterationTime;
+                        recommendedVUsers = Math.ceil(data.targetTph / newIterationsPerHour);
                     }
                 }
 
-                // Add performance suggestions based on response time trends
-                if (avgResponseTime > 3) { // Using a general 3-second threshold
-                    suggestions.push(`High average response time (${avgResponseTime.toFixed(2)}s). Consider performance optimization.`);
+                // Add performance insights
+                if (avgResponseTime > 2) {
+                    suggestions.push(`High response time (${avgResponseTime.toFixed(2)}s) may limit throughput`);
                 }
 
                 if (data.targetTph > data.currentTph * 2) {
-                    suggestions.push(`Significant TPH increase requested (${data.currentTph.toFixed(1)} → ${data.targetTph}). Consider gradual scaling.`);
+                    suggestions.push(`Large TPH increase (${data.currentTph.toFixed(1)} → ${data.targetTph}) - consider gradual scaling`);
                 }
 
                 return {
                     vusers: recommendedVUsers,
                     pacing: adjustedPacing,
                     thinkTime: adjustedThinkTime,
+                    tphPerUser: actualTphPerUser,
                     suggestions: suggestions
                 };
             } catch (error) {
-                console.error('Error in calculations:', error);
+                console.error('Calculation error:', error);
                 return {
                     vusers: data.currentVUsers,
                     pacing: data.pacing,
                     thinkTime: data.totalThinkTime / data.transactionCount,
+                    tphPerUser: data.currentTph / data.currentVUsers,
                     suggestions: ['Error in calculations. Using current values.']
                 };
             }
         }
 
         async function calculateVUsers() {
+            // Previous file loading code remains same
             const lastResultsFile = document.getElementById('lastResultsFile').files[0];
             const planningDataFile = document.getElementById('planningDataFile').files[0];
             
@@ -185,6 +186,7 @@
                     recommendations.deleteRow(1);
                 }
 
+                // Process data and create summary
                 const scriptData = {};
                 planningDataObj.forEach(plan => {
                     if (!scriptData[plan.scriptName]) {
@@ -193,7 +195,6 @@
                             targetTph: plan.plannedTph,
                             currentVUsers: plan.previousVUsers,
                             pacing: plan.pacing,
-                            transactions: [],
                             totalResponseTime: 0,
                             totalThinkTime: 0,
                             transactionCount: 0
@@ -210,15 +211,14 @@
                     }
                 });
 
+                // Generate recommendations
                 Object.entries(scriptData).forEach(([scriptName, data]) => {
-                    if (data.transactionCount === 0) return; // Skip if no matching transactions
+                    if (data.transactionCount === 0) return;
 
                     const row = recommendations.insertRow(-1);
                     const avgResponseTime = data.totalResponseTime / data.transactionCount;
-                    
-                    const recommendation = calculateRealisticParameters(data, avgResponseTime);
+                    const recommendation = calculateWorkload(data, avgResponseTime);
 
-                    // Populate table cells
                     row.insertCell(0).textContent = scriptName;
                     row.insertCell(1).textContent = data.currentTph.toFixed(2);
                     row.insertCell(2).textContent = data.targetTph;
@@ -227,15 +227,15 @@
                     row.insertCell(5).textContent = recommendation.pacing.toFixed(1) + 's';
                     row.insertCell(6).textContent = data.currentVUsers;
                     row.insertCell(7).textContent = recommendation.vusers;
-                    row.insertCell(8).textContent = recommendation.suggestions.join('\n');
+                    row.insertCell(8).textContent = recommendation.tphPerUser.toFixed(2);
+                    row.insertCell(9).textContent = recommendation.suggestions.join('\n');
 
-                    // Apply styling
-                    [1,2,3,4,5,6,7].forEach(index => {
+                    [1,2,3,4,5,6,7,8].forEach(index => {
                         row.cells[index].className = 'numeric';
                     });
                     
                     if (recommendation.suggestions.length > 0) {
-                        row.cells[8].className = 'suggestion';
+                        row.cells[9].className = 'suggestion';
                     }
                 });
             } catch (error) {
