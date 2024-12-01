@@ -47,19 +47,37 @@
         }
 
         function calculateWorkloadParameters(currentTph, targetTph, totalResponseTime, totalThinkTime, currentPacing, currentVUsers) {
+            // Initial calculation using formula
+            const recommendedVUsers = Math.ceil((targetTph * (totalResponseTime + totalThinkTime)) / 3600);
+            let suggestedPacing = Math.ceil(3600 / (targetTph / recommendedVUsers));
+            
+            // Calculate VUser change percentage
+            const vuserChange = ((recommendedVUsers - currentVUsers) / currentVUsers) * 100;
+            
+            let finalVUsers = recommendedVUsers;
+            let finalPacing = suggestedPacing;
+
+            // If VUser change is more than 50%, use 70-30 distribution
+            if (Math.abs(vuserChange) > 50) {
+                // Split target TPH
+                const primaryTPH = targetTph * 0.7;    // 70% of target TPH
+                const secondaryTPH = targetTph * 0.3;  // 30% of target TPH
+                
+                // Calculate VUsers for primary TPH
+                finalVUsers = Math.ceil((primaryTPH * (totalResponseTime + totalThinkTime)) / 3600);
+                
+                // Calculate pacing needed to achieve secondary TPH with current VUsers
+                finalPacing = Math.ceil(3600 / (secondaryTPH / currentVUsers));
+                finalPacing = Math.max(5, finalPacing); // Minimum 5s pacing
+            }
+
             const tphChangePercent = ((targetTph - currentTph) / currentTph) * 100;
             
-            // Calculate VUsers using the formula: (Planned_TPH * (Response_Time + Think_Time)) / 3600
-            const recommendedVUsers = Math.ceil((targetTph * (totalResponseTime + totalThinkTime)) / 3600);
-            
-            // Calculate suggested pacing based on the new VUser count
-            let suggestedPacing = Math.ceil(3600 / (targetTph / recommendedVUsers));
-            suggestedPacing = Math.max(5, suggestedPacing); // Minimum 5s pacing
-
             return {
-                vusers: recommendedVUsers,
-                pacing: suggestedPacing,
-                tphChangePercent: tphChangePercent
+                vusers: finalVUsers,
+                pacing: finalPacing,
+                tphChangePercent: tphChangePercent,
+                isDistributed: Math.abs(vuserChange) > 50
             };
         }
 
@@ -137,17 +155,15 @@
                     );
 
                     const row = table.insertRow(-1);
-                    
-                    // Define common cell style for center alignment
                     const cellStyle = "padding:8px; border:1px solid #ccc; text-align:center;";
                     
-                    // Insert cells with inline styles
                     row.insertCell(0).outerHTML = `<td style="${cellStyle}">${scriptName}</td>`;
                     row.insertCell(1).outerHTML = `<td style="${cellStyle}">${info.totalPassCount.toFixed(0)}</td>`;
                     row.insertCell(2).outerHTML = `<td style="${cellStyle}">${info.totalPlannedTph}</td>`;
                     
                     const changeStyle = recommendation.tphChangePercent > 0 ? "color:#006644;" : "color:#bf2600;";
-                    row.insertCell(3).outerHTML = `<td style="${cellStyle} ${changeStyle}">${recommendation.tphChangePercent.toFixed(1)}%</td>`;
+                    const distNote = recommendation.isDistributed ? ' (70-30 split)' : '';
+                    row.insertCell(3).outerHTML = `<td style="${cellStyle} ${changeStyle}">${recommendation.tphChangePercent.toFixed(1)}%${distNote}</td>`;
                     
                     row.insertCell(4).outerHTML = `<td style="${cellStyle}">${info.totalResponseTime.toFixed(1)}s</td>`;
                     row.insertCell(5).outerHTML = `<td style="${cellStyle}">${info.totalThinkTime.toFixed(1)}s</td>`;
