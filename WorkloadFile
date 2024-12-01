@@ -14,7 +14,15 @@
                         <input type="file" id="planningDataFile" accept=".csv">
                     </div>
                     <div style="margin:10px 0;">
-                        <button onclick="calculateVUsers()" style="padding:5px 10px; background:#0052cc; color:white; border:none; border-radius:3px;">Calculate VUsers</button>
+                        <label style="margin-right:20px;">
+                            <input type="checkbox" id="suggestVUsers" checked> Suggest VUsers Changes
+                        </label>
+                        <label style="margin-right:20px;">
+                            <input type="checkbox" id="suggestPacing" checked> Suggest Pacing Changes
+                        </label>
+                    </div>
+                    <div style="margin:10px 0;">
+                        <button onclick="calculateVUsers()" style="padding:5px 10px; background:#0052cc; color:white; border:none; border-radius:3px;">Calculate</button>
                     </div>
                 </td>
             </tr>
@@ -46,47 +54,62 @@
             });
         }
 
-        function calculateWorkloadParameters(currentTph, targetTph, totalResponseTime, totalThinkTime, currentPacing, currentVUsers) {
-            // Initial calculation using formula
-            const recommendedVUsers = Math.ceil((targetTph * (totalResponseTime + totalThinkTime)) / 3600);
-            let suggestedPacing = Math.ceil(3600 / (targetTph / recommendedVUsers));
+        function calculateWorkloadParameters(currentTph, targetTph, totalResponseTime, totalThinkTime, currentPacing, currentVUsers, suggestVUsers, suggestPacing) {
+            const tphChangePercent = ((targetTph - currentTph) / currentTph) * 100;
             
-            // Calculate VUser change percentage
-            const vuserChange = ((recommendedVUsers - currentVUsers) / currentVUsers) * 100;
+            // Initial calculations using formula: (Planned_TPH * (Response_Time + Think_Time)) / 3600
+            const baseRecommendedVUsers = Math.ceil((targetTph * (totalResponseTime + totalThinkTime)) / 3600);
+            const baseSuggestedPacing = Math.ceil(3600 / (targetTph / baseRecommendedVUsers));
             
-            let finalVUsers = recommendedVUsers;
-            let finalPacing = suggestedPacing;
+            const vuserChange = ((baseRecommendedVUsers - currentVUsers) / currentVUsers) * 100;
+            
+            let finalVUsers = currentVUsers;
+            let finalPacing = currentPacing;
+            let isDistributed = false;
 
-            // If VUser change is more than 50%, use 70-30 distribution
-            if (Math.abs(vuserChange) > 50) {
-                // Split target TPH
+            if (Math.abs(vuserChange) > 50 && suggestVUsers && suggestPacing) {
+                // Use 70-30 distribution when both options are selected and change is > 50%
                 const primaryTPH = targetTph * 0.7;    // 70% of target TPH
                 const secondaryTPH = targetTph * 0.3;  // 30% of target TPH
                 
-                // Calculate VUsers for primary TPH
+                // Calculate VUsers for 70% of target TPH
                 finalVUsers = Math.ceil((primaryTPH * (totalResponseTime + totalThinkTime)) / 3600);
                 
-                // Calculate pacing needed to achieve secondary TPH with current VUsers
+                // Calculate pacing for remaining 30% with current VUsers
                 finalPacing = Math.ceil(3600 / (secondaryTPH / currentVUsers));
                 finalPacing = Math.max(5, finalPacing); // Minimum 5s pacing
+                isDistributed = true;
+            } else {
+                // Handle individual suggestions
+                if (suggestVUsers) {
+                    finalVUsers = baseRecommendedVUsers;
+                }
+                if (suggestPacing) {
+                    finalPacing = Math.max(5, baseSuggestedPacing);
+                }
             }
 
-            const tphChangePercent = ((targetTph - currentTph) / currentTph) * 100;
-            
             return {
                 vusers: finalVUsers,
                 pacing: finalPacing,
                 tphChangePercent: tphChangePercent,
-                isDistributed: Math.abs(vuserChange) > 50
+                isDistributed: isDistributed
             };
         }
 
         async function calculateVUsers() {
             const lastResultsFile = document.getElementById('lastResultsFile').files[0];
             const planningDataFile = document.getElementById('planningDataFile').files[0];
+            const suggestVUsers = document.getElementById('suggestVUsers').checked;
+            const suggestPacing = document.getElementById('suggestPacing').checked;
             
             if (!lastResultsFile || !planningDataFile) {
                 alert('Please select both CSV files');
+                return;
+            }
+
+            if (!suggestVUsers && !suggestPacing) {
+                alert('Please select at least one suggestion type');
                 return;
             }
 
@@ -151,7 +174,9 @@
                         info.totalResponseTime,
                         info.totalThinkTime,
                         info.pacing,
-                        info.vusers
+                        info.vusers,
+                        suggestVUsers,
+                        suggestPacing
                     );
 
                     const row = table.insertRow(-1);
@@ -168,9 +193,9 @@
                     row.insertCell(4).outerHTML = `<td style="${cellStyle}">${info.totalResponseTime.toFixed(1)}s</td>`;
                     row.insertCell(5).outerHTML = `<td style="${cellStyle}">${info.totalThinkTime.toFixed(1)}s</td>`;
                     row.insertCell(6).outerHTML = `<td style="${cellStyle}">${info.pacing.toFixed(1)}s</td>`;
-                    row.insertCell(7).outerHTML = `<td style="${cellStyle}">${recommendation.pacing.toFixed(1)}s</td>`;
+                    row.insertCell(7).outerHTML = `<td style="${cellStyle}">${suggestPacing ? recommendation.pacing.toFixed(1) : info.pacing.toFixed(1)}s</td>`;
                     row.insertCell(8).outerHTML = `<td style="${cellStyle}">${info.vusers}</td>`;
-                    row.insertCell(9).outerHTML = `<td style="${cellStyle}">${recommendation.vusers}</td>`;
+                    row.insertCell(9).outerHTML = `<td style="${cellStyle}">${suggestVUsers ? recommendation.vusers : info.vusers}</td>`;
                 });
             } catch (error) {
                 alert('Error processing files: ' + error.message);
