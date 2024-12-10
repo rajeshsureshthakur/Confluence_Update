@@ -1,6 +1,7 @@
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.impl.client.HttpClients;
@@ -21,6 +22,11 @@ public class ConfluenceCSVUploader {
         this.apiToken = apiToken;
         this.pageId = pageId;
         this.csvFolderPath = csvFolderPath;
+        
+        System.out.println("Configuration:");
+        System.out.println("Confluence URL: " + confluenceUrl);
+        System.out.println("Page ID: " + pageId);
+        System.out.println("CSV Folder: " + csvFolderPath);
     }
 
     private List<File> getCSVFiles() {
@@ -32,32 +38,64 @@ public class ConfluenceCSVUploader {
         return Arrays.asList(files);
     }
 
+    private int getCurrentVersion() throws Exception {
+        HttpClient httpClient = HttpClients.createDefault();
+        String getUrl = String.format("%s/wiki/rest/api/content/%s?expand=version", confluenceUrl, pageId);
+        
+        HttpGet httpGet = new HttpGet(getUrl);
+        httpGet.setHeader("Authorization", "Bearer " + apiToken);
+        
+        HttpResponse response = httpClient.execute(httpGet);
+        String responseBody = EntityUtils.toString(response.getEntity());
+        
+        if (response.getStatusLine().getStatusCode() != 200) {
+            throw new Exception("Failed to get page version: " + responseBody);
+        }
+        
+        JSONObject pageInfo = new JSONObject(responseBody);
+        return pageInfo.getJSONObject("version").getInt("number");
+    }
+
     private void uploadCSVFile(File csvFile) throws Exception {
+        // First get current version
+        int currentVersion = getCurrentVersion();
+        
+        // Prepare upload URL
         String attachmentUrl = String.format("%s/wiki/rest/api/content/%s/child/attachment", 
             confluenceUrl, pageId);
         
         HttpClient httpClient = HttpClients.createDefault();
         HttpPost httpPost = new HttpPost(attachmentUrl);
         
+        // Set headers
         httpPost.setHeader("Authorization", "Bearer " + apiToken);
         httpPost.setHeader("X-Atlassian-Token", "no-check");
         
+        // Create multipart request
         MultipartEntityBuilder builder = MultipartEntityBuilder.create();
         builder.addBinaryBody("file", csvFile);
         
+        // Add the file
         HttpEntity multipart = builder.build();
         httpPost.setEntity(multipart);
         
+        // Execute request
         HttpResponse response = httpClient.execute(httpPost);
         int statusCode = response.getStatusLine().getStatusCode();
+        String responseBody = EntityUtils.toString(response.getEntity());
         
         if (statusCode >= 200 && statusCode < 300) {
             System.out.println("Successfully uploaded: " + csvFile.getName());
+            JSONObject jsonResponse = new JSONObject(responseBody);
+            String attachmentId = jsonResponse.getJSONArray("results")
+                .getJSONObject(0)
+                .getString("id");
+            System.out.println("Attachment ID: " + attachmentId);
         } else {
-            String responseBody = EntityUtils.toString(response.getEntity());
             System.err.println("Failed to upload " + csvFile.getName() + 
                 ". Status code: " + statusCode + 
                 ". Response: " + responseBody);
+            throw new Exception("Upload failed with status: " + statusCode);
         }
     }
 
@@ -72,16 +110,21 @@ public class ConfluenceCSVUploader {
         
         for (File csvFile : csvFiles) {
             try {
-                System.out.println("Uploading: " + csvFile.getName());
+                System.out.println("\nProcessing: " + csvFile.getName());
                 uploadCSVFile(csvFile);
+                // Add small delay between uploads to avoid rate limiting
+                Thread.sleep(1000);
             } catch (Exception e) {
                 System.err.println("Error uploading " + csvFile.getName() + ": " + e.getMessage());
                 e.printStackTrace();
             }
         }
+        
+        System.out.println("\nAll uploads completed!");
     }
 
     public static void main(String[] args) {
+        // Configure your settings here
         String confluenceUrl = "https://your-domain.atlassian.net";  // Your Confluence Cloud URL
         String apiToken = "your-api-token";                          // Your API token
         String pageId = "123456";                                    // Your page ID
