@@ -1,0 +1,95 @@
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.mime.MultipartEntityBuilder;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.util.*;
+
+public class ConfluenceCSVUploader {
+    private final String confluenceUrl;
+    private final String apiToken;
+    private final String pageId;
+    private final String csvFolderPath;
+
+    public ConfluenceCSVUploader(String confluenceUrl, String apiToken, String pageId, String csvFolderPath) {
+        this.confluenceUrl = confluenceUrl;
+        this.apiToken = apiToken;
+        this.pageId = pageId;
+        this.csvFolderPath = csvFolderPath;
+    }
+
+    private List<File> getCSVFiles() {
+        File folder = new File(csvFolderPath);
+        File[] files = folder.listFiles((dir, name) -> name.toLowerCase().endsWith(".csv"));
+        if (files == null || files.length == 0) {
+            return new ArrayList<>();
+        }
+        return Arrays.asList(files);
+    }
+
+    private void uploadCSVFile(File csvFile) throws Exception {
+        String attachmentUrl = String.format("%s/wiki/rest/api/content/%s/child/attachment", 
+            confluenceUrl, pageId);
+        
+        HttpClient httpClient = HttpClients.createDefault();
+        HttpPost httpPost = new HttpPost(attachmentUrl);
+        
+        httpPost.setHeader("Authorization", "Bearer " + apiToken);
+        httpPost.setHeader("X-Atlassian-Token", "no-check");
+        
+        MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+        builder.addBinaryBody("file", csvFile);
+        
+        HttpEntity multipart = builder.build();
+        httpPost.setEntity(multipart);
+        
+        HttpResponse response = httpClient.execute(httpPost);
+        int statusCode = response.getStatusLine().getStatusCode();
+        
+        if (statusCode >= 200 && statusCode < 300) {
+            System.out.println("Successfully uploaded: " + csvFile.getName());
+        } else {
+            String responseBody = EntityUtils.toString(response.getEntity());
+            System.err.println("Failed to upload " + csvFile.getName() + 
+                ". Status code: " + statusCode + 
+                ". Response: " + responseBody);
+        }
+    }
+
+    public void uploadAllFiles() {
+        List<File> csvFiles = getCSVFiles();
+        if (csvFiles.isEmpty()) {
+            System.out.println("No CSV files found in " + csvFolderPath);
+            return;
+        }
+        
+        System.out.println("Found " + csvFiles.size() + " CSV files");
+        
+        for (File csvFile : csvFiles) {
+            try {
+                System.out.println("Uploading: " + csvFile.getName());
+                uploadCSVFile(csvFile);
+            } catch (Exception e) {
+                System.err.println("Error uploading " + csvFile.getName() + ": " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        String confluenceUrl = "https://your-domain.atlassian.net";  // Your Confluence Cloud URL
+        String apiToken = "your-api-token";                          // Your API token
+        String pageId = "123456";                                    // Your page ID
+        String csvFolderPath = "path/to/csv/files";                 // Path to folder containing CSV files
+
+        ConfluenceCSVUploader uploader = new ConfluenceCSVUploader(
+            confluenceUrl, apiToken, pageId, csvFolderPath);
+            
+        uploader.uploadAllFiles();
+    }
+}
